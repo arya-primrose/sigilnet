@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+build/
+dist/
+*.egg-info/
+# an agent's home: keys, mirrors, node state. NEVER commit one.
+.sigilnet/
+*.key
+*.priv

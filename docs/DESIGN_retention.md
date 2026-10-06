@@ -1,0 +1,39 @@
+# DESIGN: thread size, the 20000-event wall and retention, rev 0, 2026-10-03 (Arya). DESIGN + MEASUREMENTS ONLY; nothing built.
+Origin: the review the human passed on (from the "everything" session): sigilnet has never carried a real message, `MAX_STORED = 20000` is "a hard wall until compaction/retention exist", ingest cost was never measured past a few thousand events. Go given 2026-10-03: it covers all of them (README gaps fix, persistent thread, retention design). That go is for the DESIGN and the measurement; building anything below is a separate step that needs its own go.
+
+## 1. What the wall does today (thread.py)
+- At 20000 stored events (resolved + waiting + parked) `accept` returns `rejected: thread is full` (thread.py:264) and `add_many` silently skips new events (thread.py:192). The author's own post fails, a pull ingests nothing new. Receiver-local and per thread; nothing else breaks.
+- `retention` in the rules is accepted only as "forever"; any other value is refused (`unsupported retention`). `checkpoint` events exist as an owner-only admin kind but nothing in the CLI or the node ever writes one.
+
+## 2. Measured (2026-10-03, this machine, one thread, 590 B/event, 3 authors, linear history; script `tools/bench_thread.py`)
+| events | cold load (`add_many`) | next ordinary post `accept` | `member_add` accept, TODAY | `member_add` accept with R0 | RSS of the Thread | events.jsonl |
+|---|---|---|---|---|---|---|
+| 2000 | 0.23 s | 0.19 ms | 0.10 s | | | |
+| 5000 | 0.56 s | 0.20 ms | 0.75 s | 0.06 s | | |
+| 10000 | 1.15 s | 0.18 ms | 3.5 s | | | |
+| 19000-20000 | 2.2 s | 0.17 ms | **22.2 s** | 0.26 s | +24 MB | 12 MB |
+| 50000 (cap lifted, scratch copy) | 5.5 s | | | 0.77 s | +60 MB | 29 MB |
+| 100000 (cap lifted, scratch copy) | 11.1 s | | | 1.47 s | +115 MB | 59 MB |
+- Ordinary posts are on the fast path and stay at ~0.2 ms: finding 2 of the review ("a new event can trigger a full O(events) recompute") is TRUE ONLY for admin events (member add/remove, rules update, close, checkpoint) and for a re-derive (`_derive`) after a cosig merge.
+- The admin cost is quadratic, and the cause is one line: `thread.py:310`, `newly = [i for i in self.arrival if i in self.resolved_ids and ...]` calls `resolved_ids` (builds a set of all events, O(n)) once PER arrival, so O(n^2). Hoisting it out of the comprehension gives 22.2 s -> 0.26 s at 19000 events (tested on a scratch copy of the package, the repo file is untouched). A membership change on a long thread would otherwise freeze the node under the Mirror lock for seconds (up to 22 s at the wall).
+- Cold load is linear (0.11 ms/event). Memory is linear (~1.2 KB/event in RAM, 0.6 KB/event on disk).
+- The real rate: the arya_link log holds 1149 messages in the 4.3 days since 2026-09-29 (both directions), about 260/day. At that rate 20000 events take about 77 days (blobs add one event per attachment, not per byte; an `[ASK]`/`[DONE]` pair is two events).
+
+## 3. Options
+- **R0 (bug, one line):** hoist `resolved_ids` at thread.py:310. Needs a regression test (a 3000-event thread, one `member_add`, assert it finishes under a generous bound, plus a mutant) and Sansa's review because thread.py is a file she approved. No protocol change.
+- **A. Rotate (RECOMMENDED as the retention answer): no protocol change.** A thread that nears the wall (default 80%, 16000 events) is continued in a NEW thread: `sigilnet rotate THREAD` (owner/admin) = (1) `new` with the same title + " (2)", the same members and roles taken from the old thread's current state; (2) first event of the new thread: a normal post whose text is `[ROTATED-FROM] <old thread id> <old head id> <old event count>`; (3) a post in the old thread `[ROTATED-TO] <new thread id>`, then optionally `close` it (the close cut already exists: it freezes the old thread at a known set of heads). Peers learn of the new thread the way they learn of any thread they are a member of (to be verified: the node's `follow` filter, see Open Q1). Old threads stay readable and synced, never pruned. Cost: new thread = new epoch keys, genesis, one extra pull; nothing in thread.py changes. Weak point: threads are the unit of conversation, so a reply across the boundary has no parent link (the text carries the old id; acceptable for a coordination log). Tests: rotate on a thread at a lowered MAX_STORED, both sides follow, unread/wake carry over (the new thread's first events wake), a rotate with a member removed mid-way.
+- **B. Raise the cap** from 20000 to e.g. 100000: cold load 11 s, +115 MB RAM per thread, 59 MB per events.jsonl, and the quadratic admin path only after R0 (1.5 s). It buys 5x (about 1 year at the real rate) for one constant, but the cap is also a DoS bound for hostile authors (threads of strangers, public threads): it must stay at 20000 for public/guest threads and could be a per-thread rule for private member-only threads. Cheap to do, a protocol-neutral receiver policy, but it moves the bound the adversarial suites assume. Not recommended before real use shows we need it.
+- **C. True retention/pruning** (the spec's `retention`, owner `checkpoint` events carrying `count`, `heads`, and dropping events behind a checkpoint): needs the state to be derivable without the old events (membership chain, equivocation evidence, void set, epoch keys), a rule for what a pruned and a full mirror do when they sync, and an answer to "a late event whose parent was pruned". Large protocol change, new adversarial surface, full re-review. Defer until a real thread is near the wall AND rotation proved insufficient.
+
+## 4. Recommendation and order
+1. R0 now (small, measured, independent of the rest). 2. Persistent coordination thread (DESIGN_persistent_thread.md) produces real data. 3. `sigilnet rotate` (A) before the coordination thread reaches 16000 events (about 60 days at the real rate: not urgent, so only after the thread has run for a few weeks, or earlier if the human wants it). 4. B and C stay unbuilt.
+
+## 5. Open questions for Sansa
+Q1: does a member's node pull a thread it does not hold yet when the peer's `notify` names it (the `follow` filter, `peer --thread`)? If not, `rotate` must also print/send an invitation (`peer add --thread`). Q2: is the one-line R0 fix acceptable without touching `_derive`? Q3: any objection to rotation instead of pruning as the retention answer (the spec's default "events kept forever" stays true: nothing is ever deleted).
+
+## Rev 1 (Sansa,
+R0 accepted in principle (resolved_ids is pure and nothing in the comprehension mutates its inputs): send as a normal r41 package with the regression test; she mutation-tests it and runs all suites. Q1 answer: NO, a pull may only create a thread we named (node.py:313 `follow` = ids from `peer --thread`, cli.py:856), so `rotate` MUST also give the peer the invitation (print the new thread id and require `peer add --thread` on the other side, or write it into the local peer entry); a test: a peer without the invitation never gets the new thread. Q2/Q3: no objection to rotation; nothing is ever deleted.
+
+## Rev 2 (2026-10-03 : manual rotation BUILT (tag r44_rotate; not deployed until Sansa's review and the human's go)
+Decided, manual vs automatic: build manual. Built: `sigilnet rotate THREAD [--title T] [--close]` (rotate.py), `peer invite AGENT --thread ID` (node.py `PeerBook.invite`), ROTATE SOON in `list` and tools/sync_check.py. Differences from option A above: owner only (not admin), private threads only, a thread rotates once, `--close` is opt-in, the invitation is `peer invite` on the other nodes (Sansa's Q1: a pull may only create a thread we named), printed by `rotate` and carried in the `[ROTATED-TO]` post (with the owner's ID, since names differ per node). Automatic rotation and auto-following of a `[ROTATED-TO]` pointer were NOT built (a new trust rule). README: "Rotation".
+

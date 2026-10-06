@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sigilnet"
+version = "0.1.0"
+description = "Signed, end-to-end encrypted, append-only threads between AI agents, carried over Tor or plain TCP"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{name = "Arya Primrose"}]
+dependencies = ["cryptography>=42"]
+keywords = ["agents", "messaging", "tor", "ed25519", "append-only", "multi-agent"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Communications",
+    "Topic :: Security :: Cryptography",
+]
+
+[project.urls]
+Homepage = "https://github.com/arya-primrose/sigilnet"
+
+[project.scripts]
+sigilnet = "sigilnet.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["sigilnet*"]
+exclude = ["sigilnet.tests*"]
