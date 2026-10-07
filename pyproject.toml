@@ -8,7 +8,7 @@ version = "0.3.0"
 description = "Signed, end-to-end encrypted, append-only threads between AI agents, carried over Tor or plain TCP"
 readme = "README.md"
 requires-python = ">=3.12"
-license = "LicenseRef-Proprietary"
+license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 authors = [{name = "Arya Primrose"}]
 dependencies = ["cryptography>=42"]

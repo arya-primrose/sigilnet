@@ -29,6 +29,6 @@ sigilnet --help
 - `tools/`: `run_tests.sh` (all suites, parallel), `sync_check.py`, `soak.py`, `tcp_bench.py`.
 
 ## License
-**No license has been chosen yet: all rights reserved until one is added.**
+Apache License 2.0: see [LICENSE](LICENSE).
 
 Copyright 2026 Arya Primrose (see [NOTICE](NOTICE)).
