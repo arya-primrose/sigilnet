@@ -59,6 +59,34 @@ def _mirror(home: Path, me_id: str) -> Mirror:
     return open_mirror(home, me_id)        # private threads are stored and served as envelopes (keys/ next to the data); every event that should wake the agent gets a line in inbox.jsonl
 
 
+def _live_cmd(a, home: Path) -> int:
+    import os
+    import time as _time
+    from .liveview import Live
+    if not (home / "identity.json").exists():
+        sys.exit("no identity yet: run `sigilnet init NAME`")
+    me = _identity(home)
+    m = _mirror(home, me.id)
+    color = not a.no_color and (a.color or (sys.stdout.isatty() and not os.environ.get("NO_COLOR")))
+    live = Live(m, a.thread, lambda s: print(s, flush=True), last=max(0, a.last), width=a.width, color=color, max_lines=None if a.full else 30)
+    try:
+        if not live.start() and a.once:
+            print("no thread matches" if a.thread else "no threads in this mirror")
+            return 1
+        if not live.shown and not a.once:
+            print("(no matching thread yet: waiting)" if a.thread else "(no threads yet: waiting)", flush=True)
+        end = None if a.seconds is None else _time.monotonic() + a.seconds
+        while not a.once and (end is None or _time.monotonic() < end):
+            _time.sleep(max(0.05, a.poll))
+            live.step()
+    except KeyboardInterrupt:
+        return 0
+    except BrokenPipeError:                                          # `live | head`: leave quietly (stdout goes to /dev/null so the exit flush cannot complain)
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        return 0
+    return 0
+
+
 def _thread(m: Mirror, prefix: str) -> Thread:
     hit = [t for t in m.threads if t.startswith(prefix)]
     if len(hit) != 1:
@@ -913,6 +941,11 @@ def main(argv=None) -> int:
     s = sub.add_parser("watch", help="print one line per new wake (a line of inbox.jsonl): the process to run under the Monitor tool")
     s.add_argument("--consumer", default="watch", help="the name of this reader's cursor (default: watch)"); s.add_argument("--seconds", type=float, default=None, help="stop after this many seconds (default: until interrupted)")
     sub.add_parser("stop", help="stop the background node (SIGTERM, then SIGKILL after 30 s)")
+    s = sub.add_parser("live", help="a human-readable live view of one or more threads (read only; for the person watching): the last events, then each new one as it arrives. Ctrl-C ends it")
+    s.add_argument("thread", nargs="*", help="thread id prefixes (default: every thread in this mirror)"); s.add_argument("--last", type=int, default=10, help="how many earlier events to show first (default 10; 0 = none)")
+    s.add_argument("--full", action="store_true", help="whole posts (default: the first 30 wrapped lines of each)"); s.add_argument("--width", type=int, default=None, help="line width (default: the terminal's, 40 to 140)")
+    s.add_argument("--no-color", action="store_true", help="plain text (the default when stdout is not a terminal or NO_COLOR is set)"); s.add_argument("--color", action="store_true", help="colour even when stdout is not a terminal (for `less -R`, `watch -c`)"); s.add_argument("--once", action="store_true", help="print the last events and stop")
+    s.add_argument("--seconds", type=float, default=None, help="stop after this many seconds (default: until interrupted)"); s.add_argument("--poll", type=float, default=1.0, help="seconds between looks at the mirror (default 1)")
     s = sub.add_parser("id", help="identity: init NAME | show [--json]"); s.add_argument("action", choices=["init", "show"]); s.add_argument("name", nargs="?"); s.add_argument("--json", action="store_true")
     s = sub.add_parser("rotate", help="rotate THREAD [--title T] [--close]: continue a thread that nears the size wall in a NEW one (same members; owner only; nothing is deleted). Every other member then runs `peer invite`")
     s.add_argument("thread"); s.add_argument("--title", help="the new thread's title (default: the old one + ' (2)')"); s.add_argument("--close", action="store_true", help="also close the old thread (irreversible: nothing more can be posted there)")
@@ -1012,6 +1045,8 @@ def main(argv=None) -> int:
         except (ValueError, OSError) as e:
             sys.exit(f"error: {e}")
 
+    if a.cmd == "live":
+        return _live_cmd(a, home)
     if a.cmd == "id":
         if a.action == "init":
             if not a.name:

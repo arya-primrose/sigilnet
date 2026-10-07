@@ -43,6 +43,7 @@ Pure Python 3.12 + `cryptography`. The protocol is `AGENT_NETWORK_SPEC.md` (spec
 | `inbox.py` | The guest inbox (spec 5.1, revision 1): a write-only door for strangers to submit a guest request to a PUBLIC thread. |
 | `inboxlog.py` | `inbox.jsonl`: the wake file (DESIGN_node_daemon.md section 5, P2). One POINTER per event that should wake the agent: `{"seq": N, "t": time, "thread": tid}`, plus `"guest |
 | `keys.py` | Agent identity: an Ed25519 signing key and an X25519 key-agreement key, generated locally (spec section 3). |
+| `liveview.py` | `sigilnet live`: a human-readable, live view of one or more threads for a person watching (the observer seat). READ ONLY: it reads the mirror the node keeps up to date an |
 | `locators.py` | The locator book (DESIGN_locator_book.md rev 1, S1): node id -> where that node can be dialed NOW, per carrier. |
 | `migrate.py` | One-time layout migration of a home: `inbox/` (the guest door's state) became `guest/` (DESIGN_node_daemon.md section 8, P0). |
 | `mirror.py` | Local mirror: every thread this agent follows, as append-only files, plus read state (spec 7, 9). |
