@@ -20,6 +20,7 @@ from concurrent.futures import ThreadPoolExecutor, wait as wait_futures
 from pathlib import Path
 from typing import NamedTuple
 
+from . import version as V
 from . import wake as wakefile
 from .carrier import CarrierError, NoCarrierUp
 from .keys import AGENT_ID_RE, is_hex
@@ -59,6 +60,7 @@ class PingResult(NamedTuple):
     peer_name: str
     peer_id: str
     via: str | None = None          # the carrier type that answered (only a node that runs several carriers can say)
+    ver: dict | None = None         # what the peer declared of its protocol (version.py): None = it declared nothing (0.1.x) or the ping failed
 
 
 # ------------------------------------------------------------------ the server side
@@ -135,9 +137,12 @@ def check_pong(resp, nonce: str, peer_id: str) -> tuple:
     if resp.get("t") == "unknown":
         return False, "refused: not authorized", None
     body = {k: v for k, v in resp.items() if k not in ENVELOPE_KEYS}
+    ver = V.parse_decl(body.pop("ver", None))                       # (the answer to an asker that declared itself: optional; a malformed one is dropped, not an error)
     if resp.get("t") != "pong" or set(body) != PONG_KEYS or body["up"] is not True or type(body["v"]) is not int or body["v"] != 1 \
             or type(body["unread"]) is not int or not 0 <= body["unread"] <= MAX_UNREAD or type(body["watching"]) is not bool:
         return False, "bad answer", None
+    if ver is not None:
+        body["ver"] = ver
     return True, None, body
 
 
@@ -154,7 +159,7 @@ def exchange(transport, me, peer_id: str, stamp=time.time, *, deadline: float | 
     for attempt in (0, 1):
         t0 = time.monotonic()
         try:
-            req = sign_request(me, {"t": "ping"}, ts=int(stamp()), aud=peer_id)
+            req = sign_request(me, {"t": "ping", "ver": V.decl()}, ts=int(stamp()), aud=peer_id)   # (`ver`: a 0.1.x server ignores it)
             resp = transport.request(req)
         except Exception as e:                                    # noqa: BLE001 - the dial is a carrier, anything can come out of it
             return False, _why_from(e), None, None
@@ -325,14 +330,18 @@ class PingService:
                     via = getattr(tr, "via", None) if ok else None
             else:
                 why = "timed out"
+            ver = None
             if ok:
+                ver = pong.pop("ver", None)                          # (the declaration is not part of the pong the node keeps: its key set stays the five keys)
                 self._log(f"ping {name}: pong {rtt:.0f} ms")
                 self.node.note_pong(peer, pong)
+                if getattr(self.node, "pv", None) is not None:
+                    self.node.pv.note(peer, ver, legacy=ver is None)   # (a signed pong: it declared its protocol, or it is 0.1.x)
             else:
                 self._log(f"ping {name}: no answer ({why})")
             if (self.dir / f"{ident}.req").exists():              # the CLI removes the request when it gives up: then nobody reads a result
                 try:
-                    _write_json(self.dir / f"{ident}.res", {"id": ident, "ok": ok, "why": why, "pong": pong, "rtt_ms": rtt, **({"via": via} if via else {})})
+                    _write_json(self.dir / f"{ident}.res", {"id": ident, "ok": ok, "why": why, "pong": pong, "rtt_ms": rtt, **({"via": via} if via else {}), **({"ver": ver} if ver else {})})
                 except OSError:
                     pass
             _unlink(self.dir / f"{ident}.req")
@@ -406,7 +415,7 @@ def ping_peer(home, peer: str, timeout: float = PING_DEFAULT_TIMEOUT, *, clock=t
                 if r.get("ok") is True and isinstance(pong, dict) and set(pong) == PONG_KEYS:
                     via = r.get("via")
                     via = via if isinstance(via, str) and re.fullmatch(r"[a-z0-9]{1,16}", via) else None
-                    return PingResult(True, None, pong, rtt if rtt is not None else 0.0, name, aid, via)
+                    return PingResult(True, None, pong, rtt if rtt is not None else 0.0, name, aid, via, V.parse_decl(r.get("ver")))
                 why = r.get("why") if r.get("ok") is False and r.get("why") in WHY else "bad answer"
                 return PingResult(False, why, None, None, name, aid)
             now = clock()
@@ -421,5 +430,5 @@ def ping_peer(home, peer: str, timeout: float = PING_DEFAULT_TIMEOUT, *, clock=t
 def format_result(res: PingResult, elapsed: float) -> str:
     if res.ok:
         p = res.pong
-        return f"pong from {res.peer_name} ({res.peer_id[:8]}): up, unread {p['unread']}, watching {'yes' if p['watching'] else 'no'}, rtt {res.rtt_ms:.0f} ms" + (f", via {res.via}" if res.via else "")
+        return f"pong from {res.peer_name} ({res.peer_id[:8]}): up, unread {p['unread']}, watching {'yes' if p['watching'] else 'no'}, rtt {res.rtt_ms:.0f} ms" + (f", via {res.via}" if res.via else "") + (f", sigilnet {res.ver['sw']} (wire {res.ver['wire']})" if res.ver else "")
     return f"no answer from {res.peer_name} ({res.peer_id[:8]}) after {round(elapsed, 1):g} s: {res.why}"

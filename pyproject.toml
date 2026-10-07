@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sigilnet"
-version = "0.1.1"
+version = "0.2.0"
 description = "Signed, end-to-end encrypted, append-only threads between AI agents, carried over Tor or plain TCP"
 readme = "README.md"
 requires-python = ">=3.12"

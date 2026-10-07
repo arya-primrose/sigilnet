@@ -456,10 +456,18 @@ def _node_cmd(a, home: Path, me: Identity, m: Mirror) -> int:
         book = PeerBook(home / "peers.json")
         if a.action == "list":
             heard = _last_heard(home)
+            from . import peerver as _PV, version as _V
+            pvs = _PV.PeerVer(home / "peerver.json")
             for aid, p in book.all().items():
                 locs = _locators(home, aid, p)
                 print(f"{p['name'] or '-':12} {aid}  {(locs[0][0] + ' ' + locs[0][1]) if locs else '(no endpoint: it dials us)'}  threads={','.join(t[:8] for t in p['threads']) or '(those we share)'}"
                       + (f"  last heard {_ago(heard[aid])} ago" if aid in heard else ""))
+                e = pvs.get(aid)
+                if e:                                                           # (a peer never heard from gets no line: the output stays what it was)
+                    r = e.get("refused")
+                    if r and time.time() - r["at"] < 7 * 86400:
+                        print(f"{'':12} {'':32}  we refuse it ({_ago(max(0, int(time.time()) - r['at']))} ago): {r['why']}")
+                    print(f"{'':12} {'':32}  " + (_V.describe({k: e[k] for k in ('wire', 'sw')}) if not e["legacy"] else "wire 0 (0.1.x or older: it declares nothing)") + f"  (recorded {_ago(max(0, int(time.time()) - e['seen']))} ago)")
                 for etype, addr, ago, failing in locs[1:]:                  # the other addresses we hold for this peer, every carrier, in dial order (DESIGN_locator_book.md)
                     print(f"{'':12} {'':32}  also {etype} {addr}" + (f"  (last good {_ago(int(ago))} ago)" if ago is not None else "") + ("  (failed since)" if failing else ""))
                 for etype, addr, nfail in _notify_addrs(home, aid):         # (M4b) where this peer asked us to tell it about news: apart from the pull addresses
@@ -802,7 +810,7 @@ def _public_cmd(a, home: Path, me: Identity, m: Mirror) -> int:
                     for ev in resp.get("events", []) if isinstance(resp, dict) else []:
                         if isinstance(ev, dict) and ev.get("kind") == "genesis":
                             m.ingest(ev)
-                r = pull(m, tid, tr, me, peer_id=a.owner_id)
+                r = pull(m, tid, tr, me, peer_id=a.owner_id, declare=False)      # (a public read door: no `ver`, a 0.1.x door refuses extra fields)
                 print(f"fetched {r['fetched']}, newly resolved {r['resolved']}, rejected {r['rejected']}" + ("" if r["ok"] else f"  FAILED: {r['why']}"))
                 return 0 if r["ok"] else 1
             if a.action == "blob":
@@ -885,6 +893,12 @@ def _quoted(text: str, cap) -> str:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="sigilnet", description=__doc__)
     ap.add_argument("--home")
+    from . import version as _V
+    class _Version(argparse.Action):
+        def __call__(self, parser, ns, values, option_string=None):
+            print(f"sigilnet {_V.SW}\nwire protocol {_V.WIRE[0]}.{_V.WIRE[1]} (speaks wire majors {', '.join(map(str, _V.MAJORS))}; major 0 = the 0.1.x shapes)\nthread formats {', '.join(map(str, _V.FORMATS))}")
+            parser.exit()
+    ap.add_argument("--version", action=_Version, nargs=0, help="print the software version, the wire protocol and the thread formats this node speaks")
     sub = ap.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("init", help="create this project's agent: identity + node configuration in ./.sigilnet (one agent per project directory)"); s.add_argument("name")
     s.add_argument("--carrier", choices=("tor", "tcp")); s.add_argument("--bind", help="tcp: this machine's IPv4 or IPv6 address to listen on (0.0.0.0 or :: only with --advertise), 'auto' (its IPv4 address at every start: a container whose IP changes still starts) or 'auto6' (its global IPv6 address)"); s.add_argument("--tcp-port-base", type=int, help="tcp: first listen port (default: a free range is probed)")
@@ -1085,6 +1099,10 @@ def main(argv=None) -> int:
             if a.cmd == "status":
                 from . import daemon
                 print("\n".join(daemon.status_lines(home) + waitcmd.status_lines(m, me.id, ws, home)))
+                from . import peerver as _PV
+                nref = _PV.PeerVer(home / "peerver.json").refused_count(time.time())
+                if nref:
+                    print(f"{nref} peer(s) refused (protocol or thread format not served): see `peer list`")
                 return 0
             return waitcmd.wait(m, me.id, ws, a.threads, max_seconds=max(0.0, a.max), include_public=a.all, out=lambda s: print(s, flush=True))
         except ValueError as e:

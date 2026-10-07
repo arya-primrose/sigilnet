@@ -16,7 +16,7 @@ from . import canon
 from .sync import SyncServer
 
 READ_TYPES = frozenset({"summary", "list", "get"})
-ALLOWED = frozenset({"t", "thread", "page", "ids", "nonce", "from", "pub", "ts", "sig", "aud"})
+ALLOWED = frozenset({"t", "thread", "page", "ids", "nonce", "from", "pub", "ts", "sig", "aud", "ver"})        # (`ver`: a declaring puller's extra field, dropped below: the door never answers with its own version)
 REQ_PER_MIN = 600
 BYTES_PER_MIN = 40_000_000
 
@@ -56,6 +56,7 @@ class PublicRead:
             return self.srv._err(req, "malformed request")
         if not self._budget():
             return self.srv._err(req, "rate limited")
+        req = {k: v for k, v in req.items() if k != "ver"}
         tid = req.get("thread")
         m = self.srv.m
         with m._lock():
@@ -66,7 +67,7 @@ class PublicRead:
             if t is None or t.state()["visibility"] != "public":
                 resp = self.srv._reply(req, {"t": "unknown"})         # one answer for "private" and "not here"
             else:
-                resp = self.srv._answer(req, tid)
+                resp = self.srv._answer(req, tid, gate=False)               # (strangers declare nothing here: an event of a format we cannot read is refused by the reader itself)
         try:
             n = len(canon.dumps(resp))
         except canon.CanonError:

@@ -36,6 +36,7 @@ from .migrate import migrate_home
 from .carrierset import CarrierSet
 from .locators import LocatorService, MultiDialer, NotifyDialer, PeerDialer, open_book, route_inbound, route_locator, route_notify_at
 from .autorotate import AutoRotator
+from .peerver import PeerVer
 from .tcplink import TcpCarrier, resolve_bind           # (registers the "tcp" endpoint/credential types; the TCP carrier, see DESIGN_tcp_carrier.md)
 from .torlink import BOOTSTRAP_TIMEOUT, TorNode           # the composition root: the ONLY protocol-side module that names the Tor carrier
 
@@ -356,6 +357,7 @@ def run(home: Path, me: Identity, *, seconds: float = 0, offline: bool = False, 
             except (CarrierError, OSError, ValueError) as e:        # a damaged held.json used to break dials only: it must not stop the NODE from starting
                 out(f"  locator: held.json damaged, credentials not indexed by node id ({type(e).__name__})")
     node = Node(m, me, peers, home / "node.json", dialer, log=nlog, locators=dialer, retry_wait=max(getattr(c, "retry_wait", 30.0) for c in carriers.values()))
+    node.pv = PeerVer(home / "peerver.json")
     node.rot = AutoRotator(m, me, peers, home / "rotation.json", log=nlog, auto_rotate=cfg["auto_rotate"], follow_rotation=cfg["follow_rotation"])      # (opt-in: DESIGN_autorotate.md; the verification of automatic follows runs whatever the switches say)
     out(f"  rotation: auto_rotate {'on' if node.rot.auto_rotate else 'off'}, follow_rotation {'on' if node.rot.follow_rotation else 'off'}")        # (what the rotator was really given: the e2e tests read it)
     locsvcs = {t: LocatorService(me, peers, c, books[t], pdialers[t], log=nlog, on_adopt=node.address_changed) for t, c in carriers.items()}     # an address is announced and verified over ITS carrier only
@@ -372,7 +374,7 @@ def run(home: Path, me: Identity, *, seconds: float = 0, offline: bool = False, 
     warm_blob_snapshot(m, bsvc)
     syncsrv = None                                                  # (the routers below ask it which carrier the request being handled arrived over)
     syncsrv = SyncServer(m, identity=me, on_notify=node.on_notify, on_push=node.on_push, blobs=bsvc, pong=node.pong_for, ping_log=make_ping_log(out),
-                         on_locator=route_locator(locsvcs, tor.type, lambda: syncsrv.via()), on_inbound=route_inbound(books), on_notify_at=route_notify_at(locsvcs))
+                         on_locator=route_locator(locsvcs, tor.type, lambda: syncsrv.via()), on_inbound=route_inbound(books), on_notify_at=route_notify_at(locsvcs), on_peer_ver=lambda agent, d: node.pv.note(agent, d), on_refuse=node.note_refusal)
     node.heard_from = syncsrv.heard.get                              # (M4a: an acknowledged notify the peer does not answer with a pull of its own makes us pull it, and a pull pushes)
     syncsrv.set_peers(peers.all())                                  # (who counts as a KNOWN sender for the server's budgets: refreshed every few seconds in the loop below)
     join_handler = capsule.JoinServer(home, list(carriers.values()), me, m).handle                # (M2: one JoinServer behind the join door of EVERY carrier)

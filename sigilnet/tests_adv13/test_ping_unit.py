@@ -53,7 +53,7 @@ class Constants(unittest.TestCase):
     def test_result_and_error_types(self):
         self.assertTrue(issubclass(ping.PingError, ValueError))
         r = ping.PingResult(True, None, {}, 1.0, "n", "i")
-        self.assertEqual(r._fields, ("ok", "why", "pong", "rtt_ms", "peer_name", "peer_id", "via"))
+        self.assertEqual(r._fields, ("ok", "why", "pong", "rtt_ms", "peer_name", "peer_id", "via", "ver"))      # (`ver`: versioning stage 1, the peer's declaration; default None)
 
 
 class HandlePing(unittest.TestCase):

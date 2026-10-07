@@ -383,7 +383,7 @@ class Requests(unittest.TestCase):
         spy = Spy()
         m = Mirror(tempfile.mkdtemp(), rate_limit=False)
         with mock.patch("os.urandom", lambda n: b"\x01" * n):
-            S.pull(m, "d" * 32, spy, Me(), peer_id="f" * 32, stamp=lambda: 1700000000, rate_retries=0)
+            S.pull(m, "d" * 32, spy, Me(), peer_id="f" * 32, stamp=lambda: 1700000000, rate_retries=0, declare=False)       # (declare=False: the 0.1.x bytes; with the declaration the same request plus `ver`: tests/test_version.py)
         self.assertEqual(S._req_bytes(spy.reqs[0]), GOLDEN_SUMMARY)
 
     def test_N3_without_the_field_the_notify_request_is_byte_identical_to_before(self):

@@ -311,6 +311,8 @@ class PeerBook:
         return gone
 
 
+REFUSAL_LOG_GAP = 3600                              # one history line per refused peer per hour
+
 class Node:
     """`transport_for(peer_record) -> object with request(dict)` (a carrier's dial in production, loopback/fakes in tests). `clock` and `rng` are injectable."""
 
@@ -343,6 +345,9 @@ class Node:
         self.heard_from = None                                     # callable(peer) -> time of its last sync request to us (SyncServer.heard), or None = never / unknown; None here = no follow-up pulls
         self._follow: dict = {}                                    # (peer, thread) -> (due, when its notify was acknowledged)
         self.rot = None                                            # autorotate.AutoRotator (noderun wires it): its slow tick runs from `tick`
+        self._refused_at: dict = {}                                # peer -> when we last logged a refusal of it
+        self.pv = None                                             # peerver.PeerVer (noderun wires it): what each peer declared of its protocol (version.py); a cache, never a gate in stage 1
+        self._pv_pruned = 0.0
         self._load_state()
 
     # ------------------------------------------------------------ state
@@ -515,6 +520,12 @@ class Node:
         now = self.clock()
         if self.rot is not None:
             self.rot.tick(now, plan)                               # (never raises, never waits for the mirror lock)
+        if self.pv is not None and now - self._pv_pruned > 3600:
+            self._pv_pruned = now
+            try:
+                self.pv.prune(set(self.peers.all()))               # (forget peers that left the book)
+            except Exception:                                       # noqa: BLE001
+                pass
         with self.mu:
             for j in self.jobs.values():                           # a clock that stepped BACK must not freeze the schedule: such a job is due now
                 if NEVER > j["next"] > now + HORIZON:
@@ -612,6 +623,8 @@ class Node:
                         res["ok"], res["why"], res["retry"] = False, "need keys the peer did not give", True
                         break
                     res = S.pull(self.m, tid, tr, self.me, peer_id=peer, deadline=S.PULL_DEADLINE, stamp=self.clock, rate_retries=RATE_RETRIES, notify_at=self._notify_at(peer))
+                if self.pv is not None and res.get("peer_seen"):
+                    self.pv.note(peer, res.get("peer_ver"), legacy=res.get("peer_ver") is None)    # (a signed successful answer: it declared its protocol, or it is 0.1.x)
                 ok, why, retry = res["ok"], res["why"], res.get("retry", True)
                 if not ok and why == "unknown":                    # an invited peer that has not fetched the thread yet (or does not share it): try again later, quietly
                     outcome = (True, "", True, False, "peer does not have this thread (yet)")
@@ -650,6 +663,21 @@ class Node:
             return
         ok, why, retry, unreachable, note = outcome
         self._finish(peer, tid, kind, ok, why, retry, unreachable, note)
+
+    def note_refusal(self, peer: str, text: str, decl=None) -> None:
+        """The server refused a KNOWN peer (its protocol, or a thread's format, is not served: version.py): one history line per peer per hour WHATEVER the text (the text carries the
+        peer's own declared wire and sw: a peer varying them must not flood the log), and the cache entry that `peer list` shows (the peer's declaration is recorded with it)."""
+        now = self.clock()
+        with self.mu:
+            last = self._refused_at.get(peer)
+            if last is not None and 0 <= now - last < REFUSAL_LOG_GAP:
+                return
+            if len(self._refused_at) >= 256:
+                self._refused_at.clear()
+            self._refused_at[peer] = now
+        self.log(peer[:8], "-", "refused", clean(text))
+        if self.pv is not None:
+            self.pv.refuse(peer, text, decl)
 
     def _defer(self, peer: str, tid: str, kind: str, why: str) -> None:
         """Nothing could be tried (no carrier up for this peer): look again in LOCATOR_WAIT seconds; no try is counted, `down` is not touched."""

@@ -29,6 +29,7 @@ from .event import EventError, check_structure, encode, event_id
 from .keys import AGENT_ID_RE, Identity, agent_id, is_hex, verify_strict
 from .envelope import EnvelopeError, chain_epoch_ids, check_confirmation, looks_like_envelope, open_envelope, seal_event, seal_key, open_key
 from .mirror import Mirror
+from . import version as V
 
 CTX = b"sigilnet/v1/sync\0"
 RESP_CTX = b"sigilnet/v1/sync-response\0"
@@ -69,6 +70,17 @@ PUSH_PARKED = 3600.0            # client: events the peer answered parked / reje
 
 def _req_bytes(req: dict) -> bytes:
     return CTX + canon.dumps({k: v for k, v in req.items() if k != "sig"})
+
+
+VER_REQS = frozenset({"summary", "list", "get"})                    # requests that carry our declaration (`ver`): 0.1.x servers ignore the extra field (push/locator/capsule requests are exact sets and never carry it)
+VER_CARRY = VER_REQS | {"ping"}                                    # the request types whose `ver` is read and answered
+VER_ANSWERS = frozenset({"summary", "list", "events", "pong"})        # answers that carry the server's `ver`, and only to an asker that declared itself (a 0.1.x asker gets the exact old bytes)
+
+
+def _carries(req: dict) -> bool:
+    """Is this a request type that may carry a declaration? (`t` of a hostile request can be any JSON value: an unhashable one must not raise.)"""
+    t = req.get("t")
+    return isinstance(t, str) and t in VER_CARRY
 
 
 def sign_request(me: Identity, body: dict, *, ts: int | None = None, aud: str | None = None) -> dict:
@@ -117,8 +129,10 @@ def open_wire(mirror: Mirror, tid: str, x):
 class SyncServer:
     """Answers sync requests from a mirror. Never raises: anything wrong becomes {"t": "error", "why": ...}."""
 
-    def __init__(self, mirror: Mirror, *, clock=time.time, on_notify=None, identity: Identity | None = None, blobs=None, pong=None, ping_log=None, on_locator=None, on_inbound=None, on_push=None, push_timer=time.monotonic, on_notify_at=None):
+    def __init__(self, mirror: Mirror, *, clock=time.time, on_notify=None, identity: Identity | None = None, blobs=None, pong=None, ping_log=None, on_locator=None, on_inbound=None, on_push=None, push_timer=time.monotonic, on_notify_at=None, on_peer_ver=None, on_refuse=None):
         self.m, self.clock, self.on_notify, self.identity = mirror, clock, on_notify, identity
+        self.on_refuse = on_refuse                                  # callable(peer agent id, the refusal text, the declaration of the refused request or None): a KNOWN peer was refused because its protocol or a thread's format is not served (version.py); a log line, never changes the answer
+        self.on_peer_ver = on_peer_ver                              # callable(peer agent id, its checked declaration): a known peer declared its protocol (version.py); a cache write, never changes the answer
         self.on_notify_at = on_notify_at                            # callable(peer agent id, the signed `notify_at` field) (M4b): a peer says where it wants notifies; the node checks and verifies it later; None = ignored
         self.on_push = on_push                                      # callable(peer agent id, thread id, accepted event ids): events a member PUSHED were stored (the node tells the other peers); called after the Mirror lock is released
         self.push_timer = push_timer                                # wall time of the ingest loop of one push request (injectable)
@@ -164,6 +178,8 @@ class SyncServer:
         n = req.get("nonce") if isinstance(req, dict) else None
         if isinstance(n, str) and len(n) == 16:
             resp["nonce"] = n                                       # bound to the request: an old response cannot answer a new question
+        if isinstance(req, dict) and _carries(req) and V.parse_decl(req.get("ver")) is not None and isinstance(resp.get("t"), str) and resp["t"] in VER_ANSWERS:
+            resp["ver"] = V.decl()                                  # (only to an asker that declared itself, only in a successful answer: a stranger's `unknown` and every 0.1.x asker's answer stay byte-identical)
         resp["r"] = 1                                               # marks a RESPONSE: a reflected request is never mistaken for one
         if self.identity is not None:                               # WHO answered: over tor/plain frames nothing else proves it (the nonce is inside the signed bytes)
             resp["by"] = self.identity.sign_pub
@@ -330,6 +346,18 @@ class SyncServer:
                 self.on_inbound(req["from"], via)                   # (cheap, throttled in the book; a failure of the cache never fails a request)
             except Exception:                                       # noqa: BLE001
                 pass
+        if self.on_peer_ver is not None and "ver" in req and _carries(req) and req["from"] in self._peers:
+            d = V.parse_decl(req["ver"])
+            if d is not None:
+                try:
+                    self.on_peer_ver(req["from"], d)
+                except Exception:                                   # noqa: BLE001
+                    pass
+        if _carries(req) and req["t"] in VER_REQS and self._known(req["from"]):
+            text = V.refusal(V.decl(), V.parse_decl(req.get("ver")))      # (the declaration of THIS request; undeclared = 0.1.x; never a cache)
+            if text:
+                self._refused(req["from"], text, V.parse_decl(req.get("ver")))
+                return self._err(req, text)
         tid = req.get("thread")
         if is_blob:
             return self._blob(req, tid)
@@ -444,10 +472,22 @@ class SyncServer:
         resp = self.blobs.serve(req, cid) if cid is not None else None
         return self._reply(req, resp if resp is not None else {"t": "unknown"})
 
-    def _answer(self, req: dict, tid) -> dict:
+    def _refused(self, who: str, text: str, decl=None) -> None:
+        if self.on_refuse is not None:
+            try:
+                self.on_refuse(who, text, decl)
+            except Exception:                                       # noqa: BLE001 - a log line must never change the answer
+                pass
+
+    def _answer(self, req: dict, tid, gate: bool = True) -> dict:
         t = self.m.threads.get(tid) if isinstance(tid, str) else None
         if t is None or not self._may_read(t, req):
             return self._reply(req, {"t": "unknown"})              # the same answer for "not here" and "not yours": no thread enumeration
+        if gate and _carries(req) and req["t"] in VER_REQS:
+            text = V.refusal(V.decl(), V.parse_decl(req.get("ver")), V.thread_format(t))      # a peer whose software cannot read this thread's format is told why, not served events it would only refuse
+            if text:
+                self._refused(req["from"], text, V.parse_decl(req.get("ver")))
+                return self._err(req, text)
         kind = req.get("t")
         if self.blobs is not None:
             self.blobs.note_thread(t)                              # keep the lock-free member snapshot warm (we hold the lock and the state anyway)
@@ -625,10 +665,11 @@ class PullResult(dict):
 
 
 def pull(mirror: Mirror, tid: str, transport, me: Identity, *, live: bool = False, peer_id: str | None = None, sleep=time.sleep,
-         deadline: float = PULL_DEADLINE, clock=time.time, stamp=time.time, rate_retries: int = RATE_RETRIES, notify_at: dict | None = None) -> PullResult:
+         deadline: float = PULL_DEADLINE, clock=time.time, stamp=time.time, rate_retries: int = RATE_RETRIES, notify_at: dict | None = None, declare: bool = True) -> PullResult:
     """Fetch what the peer has for thread `tid` that we lack, verifying everything. Idempotent and resumable: run it again after a failure.
-    `notify_at` (M4b): {"type", "addr"}, the address we want notifies at; it rides in the signed `summary` request only (never in list/get/key)."""
-    r = PullResult(thread=tid, fetched=0, resolved=0, rejected=0, requests=0, ok=True, why="", need_keys=set(), unopened=[], peer_ids=set())
+    `notify_at` (M4b): {"type", "addr"}, the address we want notifies at; it rides in the signed `summary` request only (never in list/get/key).
+    `declare` (versioning stage 1): put our declaration (`ver`) in summary/list/get; a pull from a PUBLIC read door passes False (a 0.1.x read door refuses any extra field)."""
+    r = PullResult(thread=tid, fetched=0, resolved=0, rejected=0, requests=0, ok=True, why="", need_keys=set(), unopened=[], peer_ids=set(), peer_seen=False, peer_ver=None)
     t_end = clock() + deadline
 
     def fail(why):
@@ -642,7 +683,7 @@ def pull(mirror: Mirror, tid: str, transport, me: Identity, *, live: bool = Fals
             if clock() > t_end:
                 return fail("pull deadline exceeded")
             r["requests"] += 1
-            req = sign_request(me, body, ts=int(stamp()), aud=peer_id)
+            req = sign_request(me, {**body, "ver": V.decl()} if declare and body.get("t") in VER_REQS else body, ts=int(stamp()), aud=peer_id)
             try:
                 resp = transport.request(req)
             except Exception as e:                                 # noqa: BLE001 - transport failures are just "the peer is unreachable"
@@ -653,6 +694,11 @@ def pull(mirror: Mirror, tid: str, transport, me: Identity, *, live: bool = Fals
                 return fail("response does not answer this request")
             if peer_id is not None and not response_signed_by(resp, peer_id):
                 return fail("response is not signed by the expected peer")
+            if resp.get("t") in ("summary", "list", "events") and req.get("t") in VER_REQS:
+                r["peer_seen"] = True                                # a signed, successful answer: it either declares its protocol or it is 0.1.x
+                d = V.parse_decl(resp.get("ver"))
+                if d is not None:
+                    r["peer_ver"] = d
             if resp.get("t") == "error" and resp.get("why") == "rate limited" and attempt < rate_retries:
                 sleep(1.5)
                 continue

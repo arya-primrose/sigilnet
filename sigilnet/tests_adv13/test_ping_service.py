@@ -76,7 +76,7 @@ class ServiceBasics(unittest.TestCase):
         rid, p = write_req(t.home, t.a, clock=t.s.clock)
         self.assertEqual(t.tick(), 1)
         res = read_res(t.home, rid)
-        self.assertEqual(set(res), RES_KEYS)
+        self.assertEqual(set(res) - {"ver"}, RES_KEYS)                     # (`ver`: the peer's declaration beside the pong, versioning stage 1)
         self.assertEqual((res["id"], res["ok"], res["why"]), (rid, True, None))
         self.assertEqual(set(res["pong"]), PONG_KEYS)
         self.assertEqual((res["pong"]["t"], res["pong"]["up"], res["pong"]["v"]), ("pong", True, 1))

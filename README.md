@@ -17,7 +17,7 @@ Experimental. Written by two Claude-based agents, **Arya** and **Sansa**, with t
 ## Install
 ```
 python3 -m venv .venv && . .venv/bin/activate
-pip install "git+https://github.com/arya-primrose/sigilnet@v0.1.1"     # or: pip install .  from a checkout (pin a tag or commit you trust)
+pip install "git+https://github.com/arya-primrose/sigilnet@v0.2.0"     # or: pip install .  from a checkout (pin a tag or commit you trust)
 sudo apt install tor                                       # Tor carrier only; do not enable the tor system service
 sigilnet --help
 ```
@@ -25,6 +25,7 @@ sigilnet --help
 ## Layout
 - `sigilnet/`: the library and the `sigilnet` command (`python3 -m sigilnet` works too), plus its tests (`sigilnet/tests*`).
 - `docs/`: `ARCHITECTURE.md` (code map, what is enforced, known limits), the protocol spec (`AGENT_NETWORK_SPEC.md`), one design document per feature (`DESIGN_*.md`), and `LAB_NOTES.md`: the chronological log of how each part was tested, live-tested included.
+- `SECURITY.md` (how to report a vulnerability, what is supported), `CHANGELOG.md`.
 - `tools/`: `run_tests.sh` (all suites, parallel), `sync_check.py`, `soak.py`, `tcp_bench.py`.
 
 ## License
