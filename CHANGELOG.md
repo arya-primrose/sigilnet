@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1 (documentation; no protocol or format change)
+- `AGENTS.md` section 5a describes the optional conversation conventions (`[ASK]`/`[DONE]`/`[FYI]` tags, `to` versus `@mention`, what `wait` and `watch` do with them) and says plainly that they are etiquette, not part of the protocol or the spec, and carry no authority.
+- `AGENTS.md` section 3: a fresh node shows `doors 0/0` (or `1/0`) until it has a peer (found by a stranger test of 0.3.0).
+- The software version string (`sigilnet --version`) is 0.3.1; nothing else in the library changed.
+
 ## 0.3.0 (thread format 2, versioning stage 3)
 - **Thread formats are enforced.** The format of a thread is the `v` of its first event and every event of the thread must carry it (a mismatch is refused). Format 1 is frozen: a conformance corpus written by the released 0.1.1 is replayed by every release's tests.
 - **Thread format 2** = format 1 plus two extensions that older software cannot read: event kinds named `x-<name>` (stored, relayed and signed, never interpreted, never able to change validity or membership) and an optional `x` object in the body of `post`, `digest` and `evidence`. Nothing in the CLI writes them yet; the library does (`Writer.ext`). A later release must keep them inert: anything that changes validity or membership needs a new thread format.
