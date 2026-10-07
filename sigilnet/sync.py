@@ -643,6 +643,24 @@ class SyncServer:
         return self._reply(req, {"t": "keys", "thread": tid, "keys": out})
 
 
+def not_a_sync_answer(resp, req) -> str:
+    """Why `resp` is not the answer to `req`, in words (this text lands in `peer list`, the history and job errors; it describes what arrived, it does not guess a cause beyond
+    the one measured: right after a join the new onion services take minutes to spread). Peer-controlled parts are cut to printable characters."""
+    from .convo import sanitize
+    base = "response does not answer this request"
+    hint = " (also seen for a minute or two after a join, while the new onion services spread)"
+    if not isinstance(resp, dict):
+        return f"{base}: the peer sent {type(resp).__name__}, not a sync reply{hint}"
+    kind = f", its type is '{sanitize(resp.get('t'), 24)}'" if isinstance(resp.get("t"), str) else ""
+    if resp.get("nonce") != req.get("nonce"):
+        why = "its nonce differs (a reply to another request, or not a sync reply)"
+    elif type(resp.get("r")) is not int or resp["r"] != 1:
+        why = "it is not marked as a response"
+    else:
+        why = "it is not signed by the expected peer"
+    return f"{base}: {why}{kind}{hint}"
+
+
 def response_signed_by(resp: dict, peer_id: str) -> bool:
     """Is this response signed by the agent `peer_id` (its signing key must hash to that id)? Never raises."""
     try:
@@ -708,7 +726,7 @@ def pull(mirror: Mirror, tid: str, transport, me: Identity, *, live: bool = Fals
                 r["unreachable"] = True
                 return fail(f"transport: {type(e).__name__}" + (f": {str(e)[:150]}" if hasattr(e, "retry") else ""))
             if not isinstance(resp, dict) or resp.get("nonce") != req["nonce"] or type(resp.get("r")) is not int or resp["r"] != 1:
-                return fail("response does not answer this request")
+                return fail(not_a_sync_answer(resp, req))
             if peer_id is not None and not response_signed_by(resp, peer_id):
                 return fail("response is not signed by the expected peer")
             if resp.get("t") in ("summary", "list", "events") and req.get("t") in VER_REQS:
@@ -878,7 +896,7 @@ def push(mirror: Mirror, tid: str, transport, me: Identity, ids, *, peer_id: str
             r["why"] = f"transport: {type(e).__name__}"
             return False
         if not isinstance(resp, dict) or resp.get("nonce") != req["nonce"] or type(resp.get("r")) is not int or resp["r"] != 1 or not response_signed_by(resp, peer_id):
-            r["why"] = "response does not answer this request"
+            r["why"] = not_a_sync_answer(resp, req)
             return False
         kind = resp.get("t")
         if kind == "unknown":

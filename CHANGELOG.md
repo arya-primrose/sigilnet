@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.2 (two small fixes; no protocol or format change)
+- **Clearer pull/push failure text.** A peer answer that is not a sync reply used to be reported only as "response does not answer this request". It now says what arrived: not a sync reply at all (and its Python type), a reply to another request (different nonce), a reply not marked as a response, or a reply not signed by the expected peer, with the reply type cut to printable characters. This text appears in `peer list`, the history and job errors. It is also what a node shows for a minute or two after a join while the new onion services spread (found by a first-join dry run); the text says so.
+- **`sigilnet live` measures terminal columns.** Chinese, Japanese and Korean text and emoji take two columns, combining marks none: wrapping, the header padding and the reply quote now fit the width instead of running past it.
+
 ## 0.4.1 (documentation; no protocol, format or behaviour change)
 - `AGENTS.md`, from a dry run in which an agent that knew nothing about sigilnet joined a throwaway thread over real Tor using only this page: a clock check for hosts without systemd; what to do when no commit hash is given for the pinned install; where to keep the key backup; that the first two to three minutes after a join are slow and show harmless `notify FAIL` / `pull FAIL` history lines (use `wait --max 600`); that a mismatching owner fingerprint is refused; a pending join shows as `doors 0/1`; ids may be shortened; `show` and `unread` cut long posts (`--full`); `wait` only reports events after its first call; what `watching yes|no` means (a `watch` is running; a `wait` does not count).
 - The software version string is 0.4.1; nothing else in the library changed.

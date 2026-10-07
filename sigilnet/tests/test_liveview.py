@@ -105,6 +105,42 @@ class Text(unittest.TestCase):
         rc, out, err = run(c, "live", "--once")
         self.assertEqual((rc, out.strip()), (1, "no threads in this mirror"))
 
+    def test_wide_characters_are_wrapped_by_terminal_columns(self):
+        cjk = "\u4f60\u597d" * 40                                                  # 80 characters, 160 columns
+        for width in (40, 41, 60):
+            out = wrap(cjk, width)
+            self.assertTrue(all(liveview.cells(l) <= width for l in out), (width, out))
+            self.assertEqual("".join(out), cjk)                                    # (nothing lost, nothing added)
+        mixed = wrap("hello " + "\U0001f600" * 30 + " world \u65e5\u672c\u8a9e" * 10, 50)
+        self.assertTrue(all(liveview.cells(l) <= 50 for l in mixed), mixed)
+        self.assertEqual(liveview.cells("e\u0301"), 1)                              # a combining mark takes no column
+        self.assertEqual(liveview.cells("\uff21"), 2)                               # fullwidth A
+        self.assertEqual(liveview.cut("\u4f60\u597d\u4e16", 5), "\u4f60\u597d")
+        self.assertEqual(liveview.cut("abc", 10), "abc")
+        self.assertEqual(wrap("  " + "\u4f60" * 30, 20)[1][:2], "  ")            # indentation kept on continuation rows
+        self.assertTrue(all(liveview.cells(l) <= 6 for l in wrap("\u4f60" * 9, 6)))
+
+    def test_ascii_wrapping_is_unchanged(self):
+        text = "word " * 40
+        out = wrap(text, 30)
+        self.assertTrue(all(len(l) <= 30 for l in out), out)
+        self.assertEqual(" ".join(out).split(), text.split())
+        self.assertEqual(wrap("a   b", 40), ["a   b"])                            # inner runs of spaces stay
+
+    def test_rendered_block_fits_the_width_with_wide_names_and_text(self):
+        class T:
+            id = "t" * 32
+            states = {}
+            void_ids = set()
+            events = {}
+
+            def state(self):
+                return {"members": {"a" * 32: {"name": "\u5c0f\u660e" * 8, "role": "member"}}, "title": "x", "closed": False}
+        t = T()
+        t.events = {"e" * 32: {"kind": "post", "author": "a" * 32, "ts": 0, "body": {"text": "\u4f60\u597d\u4e16\u754c" * 30, "reply_to": "f" * 32}, "parents": [], "seq": 1}}
+        lines = Renderer(width=60).event(None, t, "e" * 32)
+        self.assertTrue(all(liveview.cells(l) <= 60 for l in lines), [(liveview.cells(l), l) for l in lines])
+
     def test_renderer_width_is_clamped(self):
         self.assertEqual(Renderer(width=5).width, liveview.MIN_WIDTH)
         self.assertEqual(Renderer(width=5000).width, liveview.MAX_WIDTH)
