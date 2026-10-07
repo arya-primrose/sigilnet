@@ -1,0 +1,77 @@
+{
+ "admin_threshold": 1,
+ "closed": false,
+ "cp_count": 0,
+ "cut": {},
+ "epoch": 0,
+ "guest_policy": {
+  "max_bytes": 4096,
+  "mode": "moderated",
+  "pow_bits": 20,
+  "queue_max": 200,
+  "request_ttl_hours": 72,
+  "reserved_reply_slots": 100
+ },
+ "head": "7aa8cabfc662a38a3c988aa6513bb929",
+ "id": "7aa8cabfc662a38a3c988aa6513bb929",
+ "last_cp": "7aa8cabfc662a38a3c988aa6513bb929",
+ "members": {
+  "a75aoow24tfftnqnddxlvvpagpo7ykqd": "member",
+  "fjtmq6oor63iiw3miyxlltptwksrvbmx": "owner",
+  "madxvbxi2jxuxw3gq63o6c5jpgtqhk5c": "member",
+  "xv66ybgvi7vqhmrv2uw2jtsxhh4hft4k": "member",
+  "zos72pkimbsz4k7ufxhrobmaf22yuz7m": "observer"
+ },
+ "order": [
+  "7aa8cabfc662a38a3c988aa6513bb929",
+  "0ef918ca91e04fdc7f1797820c94c20e",
+  "07c091d1f1bba916429fd705d1ba57d7",
+  "7614dfad4a496f1a3b9f31163f43b581",
+  "e0e717c8dec1c8cd7b9001145aef9c7f",
+  "3570e8417fc50d13d1c31e8060d36353",
+  "7a95f94517b77b632bc02cf9cd58ca7f",
+  "1759c766f16384c546044427c93e0420",
+  "f30fb5188e1ba5439484dc6679acffb9",
+  "0c32987c1ec4d42a623d970513ec7837",
+  "9257f332e208adc27472fe14b63032f8",
+  "1ba28206f7cb41916798a2c39165e947",
+  "f09c8baed290cc4b6917c6925768c1aa",
+  "babc0126ffae36263fe929a61e17c25d"
+ ],
+ "owner": "fjtmq6oor63iiw3miyxlltptwksrvbmx",
+ "owner_epoch": 0,
+ "removed": [],
+ "rules": {
+  "checkpoint_every": 50,
+  "max_event_bytes": 16384,
+  "max_members": 16,
+  "owner_silence_hours": 72,
+  "posts_per_author_per_hour": 60,
+  "retention": "forever"
+ },
+ "status": {
+  "genesis": [
+   "7aa8cabfc662a38a3c988aa6513bb929"
+  ],
+  "live": [
+   "07c091d1f1bba916429fd705d1ba57d7",
+   "0c32987c1ec4d42a623d970513ec7837",
+   "0ef918ca91e04fdc7f1797820c94c20e",
+   "1759c766f16384c546044427c93e0420",
+   "1ba28206f7cb41916798a2c39165e947",
+   "3570e8417fc50d13d1c31e8060d36353",
+   "7614dfad4a496f1a3b9f31163f43b581",
+   "7a95f94517b77b632bc02cf9cd58ca7f",
+   "9257f332e208adc27472fe14b63032f8",
+   "babc0126ffae36263fe929a61e17c25d",
+   "e0e717c8dec1c8cd7b9001145aef9c7f",
+   "f09c8baed290cc4b6917c6925768c1aa",
+   "f30fb5188e1ba5439484dc6679acffb9"
+  ]
+ },
+ "stored": 14,
+ "successors": [],
+ "title": "basic",
+ "visibility": "private",
+ "void": []
+}

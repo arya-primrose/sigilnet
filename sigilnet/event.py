@@ -2,16 +2,19 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import time
 
 from . import canon
 from .keys import AGENT_ID_RE, Identity, is_hex
 
-V = 1
+V = 1                                  # the default format (what a thread made without a choice is)
+SUPPORTED = (1, 2)                     # thread formats this code reads and writes: the format of a thread is the `v` of its genesis (DESIGN_versioning.md)
 ADMIN_KINDS = frozenset({"genesis", "member_add", "member_remove", "revoke", "rules_update", "checkpoint",
                          "owner_transfer", "owner_takeover", "close"})
 OTHER_KINDS = frozenset({"post", "digest", "evidence"})
 KINDS = ADMIN_KINDS | OTHER_KINDS
+X_KIND_RE = re.compile(r"x-[a-z0-9][a-z0-9._-]{0,47}")     # extension kinds (format 2 only): stored, relayed, never interpreted, never an admin kind
 REQUIRED = frozenset({"v", "thread", "author", "seq", "parents", "admin_ref", "ts", "kind", "body", "sig"})
 OPTIONAL = frozenset({"cosigs"})
 MAX_PARENTS = 16
@@ -22,6 +25,10 @@ MAX_TS = 2 ** 40
 
 class EventError(ValueError):
     """The event is malformed or not valid (the message says why; used as the rejection reason)."""
+
+
+def is_ext_kind(kind) -> bool:
+    return isinstance(kind, str) and X_KIND_RE.fullmatch(kind) is not None
 
 
 def signed_bytes(ev: dict) -> bytes:
@@ -60,10 +67,10 @@ def check_structure(ev, max_bytes: int = 16384) -> None:
     keys = set(ev)
     if not REQUIRED <= keys or not keys <= REQUIRED | OPTIONAL:
         raise EventError("wrong set of fields")
-    if ev["v"] != V or isinstance(ev["v"], bool):
+    if type(ev["v"]) is not int or ev["v"] not in SUPPORTED:
         raise EventError("unsupported version")
     kind = ev["kind"]
-    if kind not in KINDS:
+    if not (kind in KINDS if isinstance(kind, str) else False) and not (ev["v"] >= 2 and is_ext_kind(kind)):
         raise EventError("unknown kind")
     genesis = kind == "genesis"
     if genesis:
@@ -118,8 +125,8 @@ def decode(raw: bytes, max_bytes: int = 16384) -> dict:
 
 
 def make_event(identity: Identity, *, thread: str, kind: str, body: dict, parents=(), seq: int, admin_ref: str,
-               ts: int | None = None) -> dict:
-    ev = {"v": V, "thread": thread, "author": identity.id, "seq": seq, "parents": sorted(set(parents)),
+               ts: int | None = None, v: int = V) -> dict:
+    ev = {"v": v, "thread": thread, "author": identity.id, "seq": seq, "parents": sorted(set(parents)),
           "admin_ref": admin_ref, "ts": int(time.time()) if ts is None else ts, "kind": kind, "body": body}
     ev["sig"] = identity.sign(sign_input(ev))
     return ev

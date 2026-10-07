@@ -605,7 +605,7 @@ class Cli(unittest.TestCase):
         self.assertEqual(len(lines), 3, r.stdout)
         self.assertEqual(lines[0], f"sigilnet {V.SW}")
         self.assertIn(f"wire protocol {V.WIRE[0]}.{V.WIRE[1]}", lines[1])
-        self.assertIn("thread formats 1", lines[2])
+        self.assertIn("thread formats 2, 1", lines[2])
 
     def test_peer_list_shows_declared_legacy_and_unknown_peers(self):
         home = Path(tempfile.mkdtemp()) / "h"

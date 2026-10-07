@@ -660,6 +660,23 @@ def _clean(x, limit: int = 200) -> str:
     return "".join(c if c.isprintable() else "?" for c in s)[:limit]
 
 
+REFUSAL_KEYS = ("format mismatch", "unsupported version", "unknown kind")      # the refusals that mean "this software cannot read what the peer serves": counted by reason for the operator
+
+
+def _why_refused(r: dict, reason) -> None:
+    for k in REFUSAL_KEYS:
+        if isinstance(reason, str) and reason.startswith(k):
+            d = r.setdefault("refused", {})
+            d[k] = d.get(k, 0) + 1
+            return
+
+
+def refused_note(res) -> str:
+    """'N events refused: unsupported version (2)' for a pull that met events this software cannot read, or ''."""
+    d = res.get("refused") if hasattr(res, "get") else None
+    return "" if not d else f"{sum(d.values())} events refused: " + ", ".join(f"{k} ({n})" for k, n in sorted(d.items()))
+
+
 class PullResult(dict):
     """Counters for one pull; `ok` is False if the peer misbehaved, was cut off, refused, or did not deliver everything it listed."""
 
@@ -726,8 +743,9 @@ def pull(mirror: Mirror, tid: str, transport, me: Identity, *, live: bool = Fals
             try:
                 check_structure(ev, 3 * 65536 + 4096)
                 ok = (ev["thread"] == tid or event_id(ev) == tid) and event_id(ev) in asked      # only what we asked for, of the thread we asked about
-            except (EventError, canon.CanonError, TypeError, ValueError):
+            except (EventError, canon.CanonError, TypeError, ValueError) as e:
                 ok = False
+                _why_refused(r, str(e))
             if not ok:
                 r["rejected"] += 1                                  # nothing else is ever stored, but it still counts towards the junk cap
                 if r["rejected"] > MAX_JUNK:
@@ -738,6 +756,7 @@ def pull(mirror: Mirror, tid: str, transport, me: Identity, *, live: bool = Fals
             res = mirror.ingest(ev, live=live)
             if res.status == "rejected":
                 r["rejected"] += 1
+                _why_refused(r, res.reason)
             if tid in mirror.threads:
                 r["resolved"] += max(0, len(mirror.threads[tid].resolved_ids()) - before)
             if r["rejected"] > MAX_JUNK or r["fetched"] > MAX_FETCH:

@@ -7,10 +7,10 @@ A declaration is a self-declared hint (signed only as a claim of the node's own 
 the asker declared itself, of their answers: a 0.1.x node ignores the extra field, so the 0.1.x wire bytes are unchanged."""
 import re
 
-SW = "0.2.0"
+SW = "0.3.0"
 WIRE = (1, 0)
 MAJORS = (1, 0)
-FORMATS = (1,)
+FORMATS = (2, 1)
 LEGACY = {"wire": "0.0", "majors": [0], "formats": [1], "sw": None}      # what a peer that declares nothing is taken to speak (0.1.x)
 
 _WIRE_RE = re.compile(r"([0-9]{1,3})\.([0-9]{1,3})")
@@ -73,7 +73,7 @@ MAX_WHY = 190                       # a refusal travels as the `why` of an error
 
 def thread_format(t) -> int:
     """The format of a thread = the `v` of its genesis (DESIGN_versioning.md rev 3, 5a). Constant for the thread's life: the thread id commits to it."""
-    v = getattr(t, "genesis", {}).get("v") if isinstance(getattr(t, "genesis", None), dict) else None
+    v = getattr(t, "format", None)
     return v if type(v) is int and v >= 1 else 1
 
 

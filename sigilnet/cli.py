@@ -700,6 +700,8 @@ def _capsule_cmd(a, home: Path, me: Identity, m: Mirror) -> int:
             t = _thread(m, a.arg)
             block, cid, fp = C.create(home, chosen, me, m, t.id, ttl=a.ttl, passphrase=passphrase(), bridges=bridges, wait_address=waiter, all_carriers=list(carriers.values()))
             print(f"capsule {cid} for {t.state()['title']!r}, valid {a.ttl // 60} min, join doors on: {', '.join(c.type for c in chosen)}. Give the block below to the other human (it is a PASSWORD: anyone holding it can use it once; never put it in a thread or a log):\n\n{block}\n")
+            if t.format > 1:
+                print(f"NOTE: this thread is format {t.format}: the joiner must run sigilnet 0.3.0 or newer (`sigilnet --version` lists the formats it reads). An older node cannot read the thread, and only a peer that runs a newer sigilnet can tell it why.")
             if any(c.type == "tcp" for c in chosen):
                 print("WARNING: this capsule contains a tcp address, i.e. YOUR IP address; anyone who reads the block learns it. A capsule with only your onion address does not.")
             print(f"YOUR fingerprint, to read to them through ANOTHER channel (phone, in person): {fp}")
@@ -784,7 +786,7 @@ def _public_cmd(a, home: Path, me: Identity, m: Mirror) -> int:
         tid = a.thread
         if len(tid) != 32 or any(c not in "0123456789abcdef" for c in tid):
             sys.exit("guest: give the FULL thread id (32 hex characters)")
-        from .sync import pull
+        from .sync import pull, refused_note
 
         def transport(onion, what):
             if a.loopback:
@@ -811,7 +813,7 @@ def _public_cmd(a, home: Path, me: Identity, m: Mirror) -> int:
                         if isinstance(ev, dict) and ev.get("kind") == "genesis":
                             m.ingest(ev)
                 r = pull(m, tid, tr, me, peer_id=a.owner_id, declare=False)      # (a public read door: no `ver`, a 0.1.x door refuses extra fields)
-                print(f"fetched {r['fetched']}, newly resolved {r['resolved']}, rejected {r['rejected']}" + ("" if r["ok"] else f"  FAILED: {r['why']}"))
+                print(f"fetched {r['fetched']}, newly resolved {r['resolved']}, rejected {r['rejected']}" + (f" ({refused_note(r)})" if refused_note(r) else "") + ("" if r["ok"] else f"  FAILED: {r['why']}"))
                 return 0 if r["ok"] else 1
             if a.action == "blob":
                 return _guest_blob(a, home, m, me, tid, transport(a.read, "--read"))
@@ -914,7 +916,9 @@ def main(argv=None) -> int:
     s = sub.add_parser("id", help="identity: init NAME | show [--json]"); s.add_argument("action", choices=["init", "show"]); s.add_argument("name", nargs="?"); s.add_argument("--json", action="store_true")
     s = sub.add_parser("rotate", help="rotate THREAD [--title T] [--close]: continue a thread that nears the size wall in a NEW one (same members; owner only; nothing is deleted). Every other member then runs `peer invite`")
     s.add_argument("thread"); s.add_argument("--title", help="the new thread's title (default: the old one + ' (2)')"); s.add_argument("--close", action="store_true", help="also close the old thread (irreversible: nothing more can be posted there)")
-    s = sub.add_parser("new", help="create a thread you own"); s.add_argument("title")
+    s.add_argument("--format", type=int, default=None, help="the new thread's format (default: the old thread's; a higher one is an explicit decision and needs every member to be known to read it)")
+    s.add_argument("--force-format", action="store_true", help="with --format: rotate even if some member is not known to read the format (not with --close)")
+    s = sub.add_parser("new", help="create a thread you own"); s.add_argument("title"); s.add_argument("--format", type=int, default=1, help="thread format (default 1; 2 adds extension kinds and the `x` key, and only sigilnet 0.3+ can read it)")
     s.add_argument("--member", action="append", default=[], metavar="ROLE=PUBFILE", help="repeatable; roles: admin member guest observer")
     s.add_argument("--successor", action="append", default=[], metavar="PUBFILE"); s.add_argument("--public", action="store_true"); s.add_argument("--k", type=int, default=1)
     s.add_argument("--plaintext", action="store_true", help="private thread WITHOUT envelopes (tests, or peers that cannot hold keys)")
@@ -1153,7 +1157,7 @@ def main(argv=None) -> int:
         rc = 0
         wanted = set(tids)
         m.follow = lambda g: E.event_id(g) in wanted             # a pull may only ever create the thread(s) we asked for
-        from .sync import fetch_keys
+        from .sync import fetch_keys, refused_note
         for tid in tids:
             r = pull(m, tid, tr, me, peer_id=a.peer_id, deadline=a.deadline)
             for _ in range(3):                                       # an encrypted thread: envelopes we cannot open yet -> ask the serving member for the keys, pull again
@@ -1169,7 +1173,7 @@ def main(argv=None) -> int:
                     break
                 r = pull(m, tid, tr, me, peer_id=a.peer_id, deadline=a.deadline)
             print(f"{tid[:8]}: fetched {r['fetched']}, newly resolved {r['resolved']}, rejected {r['rejected']}, requests {r['requests']}"
-                  f"{'' if r['ok'] else '  FAILED: ' + r['why']}")
+                  f"{f' ({refused_note(r)})' if refused_note(r) else ''}{'' if r['ok'] else '  FAILED: ' + r['why']}")
             rc = rc or (0 if r["ok"] else 1)
         return rc
     if a.cmd == "new":
@@ -1178,7 +1182,11 @@ def main(argv=None) -> int:
             role, _, path = spec.partition("=")
             others.append((_load_pub(path), role))
         succ = [_load_pub(p).id for p in a.successor]
-        g = make_genesis(me, a.title, others, successors=succ, visibility="public" if a.public else "private", k=a.k)
+        if a.format > 1 and a.public:
+            sys.exit("a public thread must be format 1: its public read door serves anyone, and a reader that cannot read format 2 would get events it cannot parse, with no explanation")
+        if a.format not in E.SUPPORTED:
+            sys.exit(f"this software does not read or write thread format {a.format} (it supports {', '.join(map(str, E.SUPPORTED))})")
+        g = make_genesis(me, a.title, others, successors=succ, visibility="public" if a.public else "private", k=a.k, fmt=a.format)
         r = m.ingest(g)
         print(f"{r.status}: thread {E.event_id(g)}" + (f" ({r.reason})" if r.reason else ""))
         if r.ok and not a.public and not a.plaintext:
@@ -1189,7 +1197,7 @@ def main(argv=None) -> int:
         for tid, t in m.threads.items():
             st = t.state()
             print(f"{tid[:8]}  {st['title']!r}  owner={st['members'][st['owner']]['name']}  events={len(t.order)}  unread={len(m.unread(tid, me.id))}"
-                  f"{'  CLOSED' if st['closed'] else ''}{'  CONFLICTS' if t.conflicts else ''}"
+                  f"{f'  format {t.format}' if t.format != 1 else ''}{'  CLOSED' if st['closed'] else ''}{'  CONFLICTS' if t.conflicts else ''}"
                   f"{f'  ROTATE SOON ({len(t.stored)} of {MAX_STORED} events held)' if near_wall(len(t.stored)) and not st['closed'] else ''}")
         return 0
     if a.cmd == "ingest":
@@ -1300,16 +1308,17 @@ def main(argv=None) -> int:
             print(f"  attached {ref['cid']} ({ref['size']} bytes stored)")
         return 0 if r.ok else 1
     elif a.cmd == "rotate":
+        from . import peerver as _PV
         from .rotate import RotateError, rotate_thread
         try:
-            res = rotate_thread(m, me, t.id, title=a.title, close=a.close)
+            res = rotate_thread(m, me, t.id, title=a.title, close=a.close, fmt=a.format, force_format=a.force_format, peerver=_PV.PeerVer(home / "peerver.json"))
         except RotateError as e:
             print(f"error: {e}", file=sys.stderr)
             if e.partial:
                 History(home).log("cli", f"rotate of thread {t.id[:8]} stopped half-way: new thread {e.partial['new'][:8]} exists")
             return 1
         History(home).log("cli", f"rotated thread {t.id[:8]} into {res['new'][:8]}" + (" (old thread closed)" if res["closed"] else ""))
-        print(f"rotated: the new thread is {res['new']}  {res['title']!r}  (the old one had {res['events']} events; it stays readable{' and is now CLOSED' if res['closed'] else ''})")
+        print(f"rotated: the new thread is {res['new']}  {res['title']!r}  (thread format {res['format']}; the old one had {res['events']} events; it stays readable{' and is now CLOSED' if res['closed'] else ''})")
         print("This node serves the new thread to its members by itself. Every OTHER node must be told about it (a node pulls only threads it was told about); on each of them run:")
         for name, agent in res["invite"]:
             print(f"    sigilnet peer invite {me.id} --thread {res['new']}        # on {name}'s node ({agent[:8]})")

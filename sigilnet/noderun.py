@@ -359,6 +359,7 @@ def run(home: Path, me: Identity, *, seconds: float = 0, offline: bool = False, 
     node = Node(m, me, peers, home / "node.json", dialer, log=nlog, locators=dialer, retry_wait=max(getattr(c, "retry_wait", 30.0) for c in carriers.values()))
     node.pv = PeerVer(home / "peerver.json")
     node.rot = AutoRotator(m, me, peers, home / "rotation.json", log=nlog, auto_rotate=cfg["auto_rotate"], follow_rotation=cfg["follow_rotation"])      # (opt-in: DESIGN_autorotate.md; the verification of automatic follows runs whatever the switches say)
+    node.rot.last_error = lambda peer, tid: (node.jobs.get(node._key(peer, tid, "pull")) or {}).get("err", "")      # (so an expiry can say WHY: the owner's gating text names the thread format)
     out(f"  rotation: auto_rotate {'on' if node.rot.auto_rotate else 'off'}, follow_rotation {'on' if node.rot.follow_rotation else 'off'}")        # (what the rotator was really given: the e2e tests read it)
     locsvcs = {t: LocatorService(me, peers, c, books[t], pdialers[t], log=nlog, on_adopt=node.address_changed) for t, c in carriers.items()}     # an address is announced and verified over ITS carrier only
     locsvc = locsvcs[tor.type]

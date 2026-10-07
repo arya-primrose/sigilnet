@@ -19,7 +19,7 @@ import unicodedata
 from dataclasses import dataclass, field
 
 from . import canon
-from .event import ADMIN_KINDS, EventError, check_structure, cosign_input, encode, event_id, sign_input
+from .event import ADMIN_KINDS, EventError, check_structure, cosign_input, encode, event_id, is_ext_kind, sign_input
 from .keys import AGENT_ID_RE, agent_id, is_hex, valid_kex_pub, valid_sign_pub, verify_strict
 
 ROLES = ("owner", "admin", "member", "guest", "observer")
@@ -81,6 +81,19 @@ def _eq_int(v, n) -> bool:
 def _seq_list(v, last) -> bool:
     """Sorted, distinct seqs below `last`: the gaps in what the remover had seen (at most 64 of them)."""
     return isinstance(v, list) and len(v) <= 64 and all(type(x) is int and 0 <= x < last for x in v) and v == sorted(set(v))
+
+
+X_MAX_BYTES = 4096
+
+
+def _x_ok(x) -> bool:
+    """The extension key: a JSON object (the signature and the event size cap cover it; this bounds it on its own too)."""
+    if not isinstance(x, dict):
+        return False
+    try:
+        return len(canon.dumps(x)) <= X_MAX_BYTES
+    except canon.CanonError:
+        return False
 
 
 def _is_id(x) -> bool:
@@ -157,6 +170,7 @@ class Thread:
             raise EventError(why)
         self.clock = clock
         self.genesis = genesis
+        self.format = genesis["v"]                             # the format of the whole thread: every event carries the genesis's `v` (a newer format is a NEW thread, reached by rotate)
         self.id = event_id(genesis)
         b = genesis["body"]
         members = {}
@@ -186,7 +200,7 @@ class Thread:
                 check_structure(ev, CEILING * 3)
             except EventError:
                 continue
-            if ev["kind"] == "genesis" or ev["thread"] != self.id:
+            if ev["kind"] == "genesis" or ev["thread"] != self.id or ev["v"] != self.format:
                 continue
             eid = event_id(ev)
             if eid not in self.stored and len(self.stored) < MAX_STORED:
@@ -246,6 +260,8 @@ class Thread:
             return Result("duplicate") if event_id(ev) == self.id else Result("rejected", "a second genesis")
         if ev["thread"] != self.id:
             return Result("rejected", "wrong thread")
+        if ev["v"] != self.format:
+            return Result("rejected", f"format mismatch (this thread is format {self.format}, the event is format {ev['v']})")
         eid = event_id(ev)
         if eid in self.stored:
             if ev.get("cosigs") and self._merge_cosigs(eid, ev):
@@ -914,6 +930,8 @@ class Thread:
             return "exactly one member must be the owner"
         if b["visibility"] not in ("private", "public"):
             return "bad visibility"
+        if b["visibility"] == "public" and g["v"] != 1:
+            return "a public thread must be format 1 (its read door serves anyone, including software that cannot read a newer format)"
         why = _check_rules(b["rules"]) or _check_guest_policy(b["guest_policy"])
         if why:
             return why
@@ -939,8 +957,11 @@ class Thread:
     def _body_problem(self, ev: dict, st: dict, admitting: bool = False, self_revoke: bool = False) -> str | None:
         kind, b, author = ev["kind"], ev["body"], ev["author"]
         role = st["members"].get(author, {}).get("role")
+        xs = {"x"} if self.format >= 2 else set()              # the extension key (format 2 only; never in admin bodies)
+        if "x" in b and not is_ext_kind(kind) and (not xs or kind not in ("post", "digest", "evidence") or "guest" in b or not _x_ok(b["x"])):     # (an extension kind's body is free-form)
+            return "bad extension key x"
         if kind == "post":
-            allowed = {"text", "reply_to", "refs", "to", "guest"}
+            allowed = {"text", "reply_to", "refs", "to", "guest"} | xs
             if not isinstance(b.get("text"), str) or set(b) - allowed:
                 return "bad post body"
             if "reply_to" in b and (not is_hex(b["reply_to"], 32) or b["reply_to"] not in ev["parents"]):
@@ -965,7 +986,7 @@ class Thread:
         if role not in ("owner", "admin", "member"):
             return "role may not write this kind"
         if kind == "digest":
-            if set(b) - {"text", "covers", "pinned"} or not isinstance(b.get("text"), str) or not isinstance(b.get("covers"), list) \
+            if set(b) - {"text", "covers", "pinned"} - xs or not isinstance(b.get("text"), str) or not isinstance(b.get("covers"), list) \
                     or len(b["covers"]) > 64 or any(not is_hex(x, 32) for x in b["covers"]):
                 return "bad digest"
             if "pinned" in b:
@@ -976,7 +997,7 @@ class Thread:
             return None
         if kind == "evidence":
             return self._evidence_problem(b, role)
-        return None       # admin kinds are judged in _accept_admin (they need the whole event: cosigs)
+        return None       # admin kinds (and extension kinds: a plain leaf event, never interpreted) are judged in _accept_admin (they need the whole event: cosigs)
 
     def _in_thread(self, e: dict) -> bool:
         return e["thread"] == self.id or event_id(e) == self.id       # the genesis itself is part of the thread
@@ -984,7 +1005,7 @@ class Thread:
     def _evidence_problem(self, b: dict, role) -> str | None:
         if role not in ("owner", "admin", "member"):
             return "role may not file evidence"
-        if set(b) - {"a", "b", "reason"} or not isinstance(b.get("a"), dict) or not isinstance(b.get("b"), dict):
+        if set(b) - {"a", "b", "reason", "x"} or not isinstance(b.get("a"), dict) or not isinstance(b.get("b"), dict):
             return "bad evidence"
         if "reason" in b and (not isinstance(b["reason"], str) or len(b["reason"]) > 500):
             return "bad evidence reason"
@@ -993,6 +1014,8 @@ class Thread:
             check_structure(a, CEILING); check_structure(c, CEILING)
         except EventError as e:
             return f"evidence event malformed: {e}"
+        if a["v"] != self.format or c["v"] != self.format:
+            return "evidence events must have this thread's format"
         if not self._in_thread(a) or not self._in_thread(c) or a["author"] != c["author"] or event_id(a) == event_id(c):
             return "evidence must be two different events by one author in this thread"
         key = self.known_keys.get(a["author"])

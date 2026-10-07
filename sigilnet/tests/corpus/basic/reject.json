@@ -1,0 +1,334 @@
+[
+ {
+  "event": {
+   "admin_ref": "7aa8cabfc662a38a3c988aa6513bb929",
+   "author": "madxvbxi2jxuxw3gq63o6c5jpgtqhk5c",
+   "body": {
+    "text": "probe"
+   },
+   "kind": "post",
+   "parents": [
+    "babc0126ffae36263fe929a61e17c25d"
+   ],
+   "seq": 6,
+   "sig": "15e7bc1ad6f227904a6460e31247adc12d4d06421aad7f0fd83a252d9b8e82434387eeb3bbf5b094be31d31847141761d489bf3e7aaaaaf6a6f6e37017eac40d",
+   "thread": "7aa8cabfc662a38a3c988aa6513bb929",
+   "ts": 1791344466,
+   "v": 2
+  },
+  "status": "rejected",
+  "why": "v 2 inside a v 1 thread"
+ },
+ {
+  "event": {
+   "admin_ref": "7aa8cabfc662a38a3c988aa6513bb929",
+   "author": "madxvbxi2jxuxw3gq63o6c5jpgtqhk5c",
+   "body": {
+    "text": "probe"
+   },
+   "kind": "post",
+   "parents": [
+    "babc0126ffae36263fe929a61e17c25d"
+   ],
+   "seq": 6,
+   "sig": "0a2a966d82eb489566c1771f3a43c7f8c633b9047a8116074dc03cf09203426f335292cba6ead19ea7950100cd9e2ec591db590ecb0dfbb5e13011ae3c3f5901",
+   "thread": "7aa8cabfc662a38a3c988aa6513bb929",
+   "ts": 1791344466,
+   "v": 3
+  },
+  "status": "rejected",
+  "why": "v 3"
+ },
+ {
+  "event": {
+   "admin_ref": "7aa8cabfc662a38a3c988aa6513bb929",
+   "author": "madxvbxi2jxuxw3gq63o6c5jpgtqhk5c",
+   "body": {
+    "text": "probe"
+   },
+   "kind": "post",
+   "parents": [
+    "babc0126ffae36263fe929a61e17c25d"
+   ],
+   "seq": 6,
+   "sig": "81b76fc654e1050962bc7f58fb35deba02c9719dafeda9f6b8829fd4ad01bc5441235e98422ffc5ed3649cdf0131adcf23b79c8413c282981ea7d1f34fba9c01",
+   "thread": "7aa8cabfc662a38a3c988aa6513bb929",
+   "ts": 1791344466,
+   "v": true
+  },
+  "status": "rejected",
+  "why": "v is a boolean"
+ },
+ {
+  "event": {
+   "admin_ref": "7aa8cabfc662a38a3c988aa6513bb929",
+   "author": "madxvbxi2jxuxw3gq63o6c5jpgtqhk5c",
+   "body": {
+    "text": "probe"
+   },
+   "kind": "x-reaction.1",
+   "parents": [
+    "babc0126ffae36263fe929a61e17c25d"
+   ],
+   "seq": 6,
+   "sig": "1a780e2e14eebad30e382ccdd0e50220f0a1db77bddb07e96bfc169c309db270326f39ce8684eb64dcf56cf47e9e35abd161db6b27c346fb9923469913ef3600",
+   "thread": "7aa8cabfc662a38a3c988aa6513bb929",
+   "ts": 1791344466,
+   "v": 1
+  },
+  "status": "rejected",
+  "why": "unknown kind x-reaction.1 at v 1"
+ },
+ {
+  "event": {
+   "admin_ref": "7aa8cabfc662a38a3c988aa6513bb929",
+   "author": "madxvbxi2jxuxw3gq63o6c5jpgtqhk5c",
+   "body": {
+    "text": "probe"
+   },
+   "kind": "reaction",
+   "parents": [
+    "babc0126ffae36263fe929a61e17c25d"
+   ],
+   "seq": 6,
+   "sig": "adbd659b41689f9ae9e1370fc6dee89107d611e158f3381ea21fbd9b157fffc62abfb7c50eb6dba0b791687e7875015ddff34ec3809f00ec13ba852975379e03",
+   "thread": "7aa8cabfc662a38a3c988aa6513bb929",
+   "ts": 1791344466,
+   "v": 1
+  },
+  "status": "rejected",
+  "why": "unknown kind"
+ },
+ {
+  "event": {
+   "admin_ref": "7aa8cabfc662a38a3c988aa6513bb929",
+   "author": "madxvbxi2jxuxw3gq63o6c5jpgtqhk5c",
+   "body": {
+    "text": "t",
+    "x": {
+     "a": 1
+    }
+   },
+   "kind": "post",
+   "parents": [
+    "babc0126ffae36263fe929a61e17c25d"
+   ],
+   "seq": 6,
+   "sig": "7956fe2c91e1bab0b183ddbfa2a4a5131df17254193f6bad735488c73cc6443dd153bfcaa4d4973b37b8bae0e1f51b38235634bf59575a51181bd11377cee803",
+   "thread": "7aa8cabfc662a38a3c988aa6513bb929",
+   "ts": 1791344466,
+   "v": 1
+  },
+  "status": "rejected",
+  "why": "extra body key x on a post"
+ },
+ {
+  "event": {
+   "admin_ref": "7aa8cabfc662a38a3c988aa6513bb929",
+   "author": "madxvbxi2jxuxw3gq63o6c5jpgtqhk5c",
+   "body": {
+    "extra": 1,
+    "text": "t"
+   },
+   "kind": "post",
+   "parents": [
+    "babc0126ffae36263fe929a61e17c25d"
+   ],
+   "seq": 6,
+   "sig": "fc3670f527d1ee7304cd9b137e57ceba84e3d7f5ffeb6b200648fbacc6b90ca1de039f809c0acd68aa95e2ce111d38bbb9f646b55b13815d11c8de037d7d260c",
+   "thread": "7aa8cabfc662a38a3c988aa6513bb929",
+   "ts": 1791344466,
+   "v": 1
+  },
+  "status": "rejected",
+  "why": "extra body key on a post"
+ },
+ {
+  "event": {
+   "admin_ref": "7aa8cabfc662a38a3c988aa6513bb929",
+   "author": "madxvbxi2jxuxw3gq63o6c5jpgtqhk5c",
+   "body": {
+    "guest": {
+     "kex": "0000000000000000000000000000000000000000000000000000000000000000",
+     "name": "g",
+     "sign": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "text": "t"
+   },
+   "kind": "post",
+   "parents": [
+    "babc0126ffae36263fe929a61e17c25d"
+   ],
+   "seq": 6,
+   "sig": "c636cd134f9df365cbb7d331ee559b0da430afa8bdc69cff485c92eb3ebecc74b75ade7e688df370936485fd90cb297f54cb1478fbc88cf513e3ca2b76c15309",
+   "thread": "7aa8cabfc662a38a3c988aa6513bb929",
+   "ts": 1791344466,
+   "v": 1
+  },
+  "status": "rejected",
+  "why": "guest field from a member"
+ },
+ {
+  "event": {
+   "admin_ref": "7aa8cabfc662a38a3c988aa6513bb929",
+   "author": "madxvbxi2jxuxw3gq63o6c5jpgtqhk5c",
+   "body": {
+    "text": "probe"
+   },
+   "extra": 1,
+   "kind": "post",
+   "parents": [
+    "babc0126ffae36263fe929a61e17c25d"
+   ],
+   "seq": 6,
+   "sig": "40b66f42e7e2a540180b10857ec0bb96c4383fe4168a1b7e66cabbcd2363f9d8282fb291bee790c5992b1b13889dd64201cd042fa26a4b0750bc258faaaadd0b",
+   "thread": "7aa8cabfc662a38a3c988aa6513bb929",
+   "ts": 1791344466,
+   "v": 1
+  },
+  "status": "rejected",
+  "why": "extra field of the event"
+ },
+ {
+  "event": {
+   "admin_ref": "7aa8cabfc662a38a3c988aa6513bb929",
+   "author": "madxvbxi2jxuxw3gq63o6c5jpgtqhk5c",
+   "body": {
+    "text": "probe"
+   },
+   "kind": "post",
+   "parents": [
+    "babc0126ffae36263fe929a61e17c25d"
+   ],
+   "seq": 6,
+   "sig": "f863837a8f5e443a8dedd3ebdb7ac68447dfef6964af184d84d235e5103cba1a84d1bfcdaeb19eee2e3391f44ff631b8d91015783ec0cfc699828ac3a0cc4d0f",
+   "thread": "7aa8cabfc662a38a3c988aa6513bb929",
+   "ts": 1791344466,
+   "v": 1
+  },
+  "status": "rejected",
+  "why": "a signature of the wrong key"
+ },
+ {
+  "event": {
+   "admin_ref": "7aa8cabfc662a38a3c988aa6513bb929",
+   "author": "madxvbxi2jxuxw3gq63o6c5jpgtqhk5c",
+   "body": {
+    "text": "probe"
+   },
+   "kind": "post",
+   "parents": [
+    "zz"
+   ],
+   "seq": 6,
+   "sig": "19458edf76577b80abd0a45b0fd3a57f769d1de999efcc9ae470b6945496021ef5ef248bf66078efe15b86e0f19e4b3dc22c3e8a206dc75a197d7b6bd1a3300e",
+   "thread": "7aa8cabfc662a38a3c988aa6513bb929",
+   "ts": 1791344466,
+   "v": 1
+  },
+  "status": "rejected",
+  "why": "a parent that is not 32 hex"
+ },
+ {
+  "event": {
+   "admin_ref": "7aa8cabfc662a38a3c988aa6513bb929",
+   "author": "madxvbxi2jxuxw3gq63o6c5jpgtqhk5c",
+   "body": {
+    "text": "probe"
+   },
+   "kind": "post",
+   "parents": [
+    "babc0126ffae36263fe929a61e17c25d"
+   ],
+   "seq": -1,
+   "sig": "4ee3c3561b9c16db079531c843cfad4b2e1a7e5014e9ba4494ea5c3297b8e360f42f0188fbca0db1e70b069684932249d5e900b4bed2099ecf49e78ef1826a0b",
+   "thread": "7aa8cabfc662a38a3c988aa6513bb929",
+   "ts": 1791344466,
+   "v": 1
+  },
+  "status": "rejected",
+  "why": "a negative seq"
+ },
+ {
+  "event": {
+   "admin_ref": "7aa8cabfc662a38a3c988aa6513bb929",
+   "author": "fjtmq6oor63iiw3miyxlltptwksrvbmx",
+   "body": {
+    "agent": "573f2m3ti7pyaloetawxe6p3yp5ofjt5",
+    "kex": "1a3d92d883fe45ce821ee953fb44b8630c6466b81ab12ce6bb9a7bbbc43abf2c",
+    "name": "eve",
+    "owner_epoch": 0,
+    "prev_admin": "7aa8cabfc662a38a3c988aa6513bb929",
+    "role": "member",
+    "sign": "3e32ffbe54a924745b70ae7ffa3b042f818b069dcd7ed8cc0cf4726051a0bc99",
+    "x": {}
+   },
+   "kind": "member_add",
+   "parents": [
+    "babc0126ffae36263fe929a61e17c25d"
+   ],
+   "seq": 7,
+   "sig": "3310e174c7b37822ffe000383a398bd140b6cdcb2f0cee0271f01794e0e5820cf4c4ffc22ae7813118d1f9133d5c6d50c8eb29e5bc9f6405b6de8bdc7d9ae004",
+   "thread": "7aa8cabfc662a38a3c988aa6513bb929",
+   "ts": 1791344466,
+   "v": 1
+  },
+  "status": "rejected",
+  "why": "member_add with an extra body key"
+ },
+ {
+  "event": {
+   "admin_ref": "",
+   "author": "fjtmq6oor63iiw3miyxlltptwksrvbmx",
+   "body": {
+    "admin_threshold": {
+     "k": 1
+    },
+    "epoch": 0,
+    "guest_policy": {
+     "max_bytes": 4096,
+     "mode": "moderated",
+     "pow_bits": 20,
+     "queue_max": 200,
+     "request_ttl_hours": 72,
+     "reserved_reply_slots": 100
+    },
+    "keys": {
+     "fjtmq6oor63iiw3miyxlltptwksrvbmx": {
+      "kex": "f2bd569fe4c5437ac87dae162d7d51f2f0769560253409ed2e9c8cdfce5d6513",
+      "sign": "d76c884570d7630542df67acbd40997751952fa6065fe0fbc46b56f0e13a76b8"
+     }
+    },
+    "members": [
+     {
+      "id": "fjtmq6oor63iiw3miyxlltptwksrvbmx",
+      "name": "owner",
+      "role": "owner"
+     }
+    ],
+    "owner": "fjtmq6oor63iiw3miyxlltptwksrvbmx",
+    "owner_epoch": 0,
+    "rules": {
+     "checkpoint_every": 50,
+     "max_event_bytes": 16384,
+     "max_members": 16,
+     "owner_silence_hours": 72,
+     "posts_per_author_per_hour": 60,
+     "retention": "forever"
+    },
+    "successors": [],
+    "title": "second",
+    "visibility": "private"
+   },
+   "kind": "genesis",
+   "parents": [],
+   "seq": 0,
+   "sig": "25734e5fb23a98c65e7997cd550d29f251ef17e6f32d8b64b5453804cd05c4d7731f581460bfd0ce94931fcbede787fa69f0087a224599e00d8fd62665a27701",
+   "thread": "",
+   "ts": 1791344466,
+   "v": 1
+  },
+  "status": "rejected",
+  "why": "a second genesis"
+ }
+]

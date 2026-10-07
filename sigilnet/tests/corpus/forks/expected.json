@@ -1,0 +1,64 @@
+{
+ "admin_threshold": 1,
+ "closed": false,
+ "cp_count": 0,
+ "cut": {},
+ "epoch": 0,
+ "guest_policy": {
+  "max_bytes": 4096,
+  "mode": "moderated",
+  "pow_bits": 20,
+  "queue_max": 200,
+  "request_ttl_hours": 72,
+  "reserved_reply_slots": 100
+ },
+ "head": "1cd0e9afb83a97510185511ca9f46012",
+ "id": "04c378cc6e5971d9cb5d3b0a02b279b6",
+ "last_cp": "04c378cc6e5971d9cb5d3b0a02b279b6",
+ "members": {
+  "4qoeakq64vp324oknlbwlgsrfwnfobvz": "owner",
+  "5p6ylkktunn5bkybooso4x3tosqpyr55": "member",
+  "oz4zjgha33e67bl3ftnbndwuupdnhvm6": "member",
+  "v5766fm4aj75l5oo2k5skg7jbfn4wlw2": "member",
+  "wtyxuwtbnjszd4pa4wmgrn6qf5jzgtuv": "observer"
+ },
+ "order": [
+  "04c378cc6e5971d9cb5d3b0a02b279b6",
+  "dde53c7f1e7e134bbf63b5b6e2477c66",
+  "1cd0e9afb83a97510185511ca9f46012"
+ ],
+ "owner": "4qoeakq64vp324oknlbwlgsrfwnfobvz",
+ "owner_epoch": 0,
+ "removed": [],
+ "rules": {
+  "checkpoint_every": 50,
+  "max_event_bytes": 16384,
+  "max_members": 16,
+  "owner_silence_hours": 72,
+  "posts_per_author_per_hour": 20,
+  "retention": "forever"
+ },
+ "status": {
+  "admin": [
+   "1cd0e9afb83a97510185511ca9f46012"
+  ],
+  "equiv": [
+   "7c192b5f2f3010741e3803f5398bbf34",
+   "7d1293e4e866e7d0df11f9de985a6494"
+  ],
+  "genesis": [
+   "04c378cc6e5971d9cb5d3b0a02b279b6"
+  ],
+  "live": [
+   "dde53c7f1e7e134bbf63b5b6e2477c66"
+  ],
+  "lost": [
+   "96ab58867a410125ae9e1480f8d5df6b"
+  ]
+ },
+ "stored": 6,
+ "successors": [],
+ "title": "forks",
+ "visibility": "private",
+ "void": []
+}

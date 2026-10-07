@@ -345,6 +345,7 @@ class Node:
         self.heard_from = None                                     # callable(peer) -> time of its last sync request to us (SyncServer.heard), or None = never / unknown; None here = no follow-up pulls
         self._follow: dict = {}                                    # (peer, thread) -> (due, when its notify was acknowledged)
         self.rot = None                                            # autorotate.AutoRotator (noderun wires it): its slow tick runs from `tick`
+        self._noted_at: dict = {}                                  # (peer, thread) -> when we last logged a pull that met events this software cannot read
         self._refused_at: dict = {}                                # peer -> when we last logged a refusal of it
         self.pv = None                                             # peerver.PeerVer (noderun wires it): what each peer declared of its protocol (version.py); a cache, never a gate in stage 1
         self._pv_pruned = 0.0
@@ -634,6 +635,9 @@ class Node:
                     if ok and tid in self.m.threads:
                         self._push(peer, tid, tr, res)                 # (M4a: offer what the peer's listing lacks; never fails or changes the outcome of the pull)
                     outcome = (ok, why, retry, bool(res.get("unreachable")), "")
+                    note = S.refused_note(res)
+                    if note and self._note_once((peer, tid)):
+                        self.log(peer[:8], tid[:8], kind, note)      # (a line for the operator: this software cannot read some of what the peer serves; once per peer and thread an hour: the text carries a count a hostile peer controls, so it is not part of the key)
             else:
                 ans, bad = self._notify_at_address(peer, info["rec"], tid)
                 if ans is None:                                    # (no notify address of this peer, or it did not work: the pull addresses, exactly as before)
@@ -663,6 +667,18 @@ class Node:
             return
         ok, why, retry, unreachable, note = outcome
         self._finish(peer, tid, kind, ok, why, retry, unreachable, note)
+
+    def _note_once(self, key) -> bool:
+        """True at most once per REFUSAL_LOG_GAP for one (peer, thread); the table is bounded."""
+        now = self.clock()
+        with self.mu:
+            last = self._noted_at.get(key)
+            if last is not None and 0 <= now - last < REFUSAL_LOG_GAP:
+                return False
+            if len(self._noted_at) >= 256:
+                self._noted_at.clear()
+            self._noted_at[key] = now
+            return True
 
     def note_refusal(self, peer: str, text: str, decl=None) -> None:
         """The server refused a KNOWN peer (its protocol, or a thread's format, is not served: version.py): one history line per peer per hour WHATEVER the text (the text carries the

@@ -51,6 +51,7 @@ class AutoRotator:
         self.clock, self.log = clock, log or (lambda *a: None)
         self.auto_rotate, self.follow_rotation = auto_rotate, follow_rotation
         self._next = 0.0
+        self.last_error = None                  # optional callable (peer id, thread id) -> the last job error text for a pull of that thread from that peer (noderun wires it)
 
     # ------------------------------------------------------------ the table (rotation.json)
     def _load(self) -> dict:
@@ -140,8 +141,10 @@ class AutoRotator:
     # ------------------------------------------------------------ verification and expiry
     def _verify(self, now: float) -> None:
         by: dict = {}
+        who: dict = {}
         for aid, tid, info in self.peers.auto_entries():
             by.setdefault(tid, []).append(info)
+            who.setdefault(tid, []).append(aid)
         for tid, infos in by.items():
             owner = infos[0]["owner"]
             t = self.m.threads.get(tid)
@@ -155,4 +158,8 @@ class AutoRotator:
                     self.log("auto-follow: removed a follow (the new thread's owner or our membership did not match)")
             elif now - min(i["at"] for i in infos) > FOLLOW_EXPIRY:
                 self.peers.settle_auto(tid, False)
-                self.log("auto-follow: a follow expired (the thread never arrived)")
+                errs = [str(self.last_error(a, tid) or "") for a in who.get(tid, [])] if self.last_error else []
+                if any(e.startswith("thread uses format") for e in errs):
+                    self.log("auto-follow: a follow expired (refused: the new thread needs a newer thread format than this software reads; upgrade sigilnet)")
+                else:
+                    self.log("auto-follow: a follow expired (the thread never arrived)")

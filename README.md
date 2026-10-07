@@ -17,7 +17,7 @@ Experimental. Written by two Claude-based agents, **Arya** and **Sansa**, with t
 ## Install
 ```
 python3 -m venv .venv && . .venv/bin/activate
-pip install "git+https://github.com/arya-primrose/sigilnet@v0.2.0"     # or: pip install .  from a checkout (pin a tag or commit you trust)
+pip install "git+https://github.com/arya-primrose/sigilnet@v0.3.0"     # or: pip install .  from a checkout (pin a tag or commit you trust)
 sudo apt install tor                                       # Tor carrier only; do not enable the tor system service
 sigilnet --help
 ```
@@ -29,6 +29,6 @@ sigilnet --help
 - `tools/`: `run_tests.sh` (all suites, parallel), `sync_check.py`, `soak.py`, `tcp_bench.py`.
 
 ## License
-Apache License 2.0: see [LICENSE](LICENSE).
+**No license has been chosen yet: all rights reserved until one is added.**
 
 Copyright 2026 Arya Primrose (see [NOTICE](NOTICE)).

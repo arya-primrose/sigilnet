@@ -50,8 +50,28 @@ def already_rotated(t, me_id: str):
     return None
 
 
-def rotate_thread(m, me, tid: str, *, title: str | None = None, close: bool = False) -> dict:
-    """Returns {"old", "new", "title", "events", "invite": [(name, agent id)], "closed"}; raises RotateError."""
+def lagging_members(st: dict, me_id: str, fmt: int, peerver) -> list:
+    """Members (observers included, guests not: they are not carried over) of the thread state `st` that cannot be shown to read thread format `fmt`: [(name, why)]. The answer comes from what
+    each member's node last DECLARED to this node (peerver.json); a member never heard from, or an old node that declares nothing (0.1.x), counts as unable."""
+    out = []
+    for a, r in st["members"].items():
+        if a == me_id or r["role"] == "guest":
+            continue
+        d = peerver.get(a) if peerver is not None else None
+        name = r.get("name") or a[:8]
+        if d is None:
+            out.append((name, "never declared a version to this node"))
+        elif d.get("legacy"):
+            out.append((name, "runs sigilnet 0.1.x (declares no formats)"))
+        elif fmt not in d["formats"]:
+            out.append((name, f"sigilnet {d['sw']} reads formats {', '.join(map(str, sorted(d['formats'])))} only"))
+    return out
+
+
+def rotate_thread(m, me, tid: str, *, title: str | None = None, close: bool = False, fmt: int | None = None, force_format: bool = False, peerver=None) -> dict:
+    """Returns {"old", "new", "title", "events", "invite": [(name, agent id)], "closed", "format"}; raises RotateError.
+    The new thread KEEPS the old thread's format unless `fmt` names a higher one (an explicit owner decision, never automatic): then every member must be known to read it (`lagging_members`),
+    or `force_format` is given (never together with `close`: a closed old thread leaves a member that cannot read the new one with nothing)."""
     t = m.threads.get(tid)
     if t is None:
         raise RotateError("no such thread")
@@ -65,12 +85,23 @@ def rotate_thread(m, me, tid: str, *, title: str | None = None, close: bool = Fa
     done = already_rotated(t, me.id)
     if done:
         raise RotateError(f"this thread was already rotated (pointer post {done[:8]}); the new thread is named in it")
+    fmt = t.format if fmt is None else fmt
+    if fmt not in E.SUPPORTED:
+        raise RotateError(f"this software does not read or write thread format {fmt}")
+    if fmt < t.format:
+        raise RotateError(f"a thread never goes back to an older format (it is format {t.format}; a format {fmt} thread cannot hold its extension events)")
+    if fmt > t.format:
+        lag = lagging_members(st, me.id, fmt, peerver)
+        if lag and (close or not force_format):
+            raise RotateError(f"these members cannot be shown to read thread format {fmt}: " + "; ".join(f"{n} ({w})" for n, w in lag)
+                              + ("" if close else " (--force-format rotates anyway: they will be told to upgrade and cannot follow until they do)")
+                              + (" ; --close is never allowed with them" if close else ""))
     if close and st["admin_threshold"] > 1:
         raise RotateError("--close needs co-signatures when the admin threshold is above 1: not supported here (rotate without --close)")
     others = [(_Pub(a, r), r["role"]) for a, r in st["members"].items() if a != me.id and r["role"] != "guest"]
     new_title = title if title is not None else next_title(st["title"])
     g = make_genesis(me, new_title, others, successors=[s for s in st["successors"] if s in st["members"]], rules=dict(st["rules"]),
-                     guest_policy=dict(st["guest_policy"]), visibility="private", k=st["admin_threshold"])
+                     guest_policy=dict(st["guest_policy"]), visibility="private", k=st["admin_threshold"], fmt=fmt)
     new_id, n_old, head_old = E.event_id(g), len(t.stored), t.head
     encrypted = m.codec.is_encrypted(tid)
     r = m.ingest(g)
@@ -99,4 +130,4 @@ def rotate_thread(m, me, tid: str, *, title: str | None = None, close: bool = Fa
             closed = True
     except RotateError as e:
         raise RotateError(str(e) + f"  (the new thread {new_id} EXISTS; the steps after it were not all done)", partial) from None
-    return {"old": tid, "new": new_id, "title": new_title, "events": n_old, "invite": invite, "closed": closed}
+    return {"old": tid, "new": new_id, "title": new_title, "events": n_old, "invite": invite, "closed": closed, "format": fmt}

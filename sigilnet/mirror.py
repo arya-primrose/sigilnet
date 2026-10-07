@@ -22,7 +22,7 @@ from pathlib import Path
 from . import canon, inboxlog
 from . import wake as wakefile
 from .envelope import PlainCodec
-from .event import EventError, check_structure, decode, encode, event_id
+from .event import EventError, check_structure, decode, encode, event_id, is_ext_kind
 from .thread import Result, Thread
 
 MAX_WIRE = 3 * 65536 + 4096              # evidence may carry two events; nothing else comes near this
@@ -30,6 +30,11 @@ DROPPED_MAX_AGE = 3 * 3600               # dropped.jsonl is a replay block for t
 DROPPED_MAX_LINES = 50000                # hard cap under a flood: the OLDEST entries go first (a replay of one still needs a fresh proof of work)
 DROPPED_PRUNE_AT = 65536                 # prune check when the file is larger than this many bytes
 MAX_ORPHANS = 64                         # events for threads we have no genesis for: unverifiable, so a small pool
+def _rated(kind) -> bool:
+    """Kinds charged to the per-author rate limit: the member-written leaf kinds, and the extension kinds (format 2) the same way."""
+    return kind in ("post", "digest", "evidence") or is_ext_kind(kind)
+
+
 UNREAD_KINDS = frozenset({"post", "evidence", "member_add", "member_remove", "revoke", "rules_update", "owner_transfer", "owner_takeover", "close"})
 PREVIEW = 200
 BODY_CAP = 600                           # `show` and `unread` print at most this many characters of one post unless asked for --full (an 8000-character post cost a reader ~8 KB: live test 2, W1)
@@ -471,12 +476,12 @@ class Mirror:
             return self._orphan(ev)
         if not self.codec.can_encode(t, ev) if hasattr(self.codec, "can_encode") else False:
             return Result("rejected", "no key for this epoch yet (need_key): nothing is written in plaintext and nothing is half-stored")
-        if live and self.rate_limit and ev["kind"] in ("post", "digest", "evidence") and event_id(ev) not in t.stored and not self._rate_ok(t, ev):
+        if live and self.rate_limit and _rated(ev["kind"]) and event_id(ev) not in t.stored and not self._rate_ok(t, ev):
             return Result("rejected", "rate limited (posts_per_author_per_hour)")
         n_wait = set(t.awaiting)
         void_before = set(t.void_ids) if self.inbox is not None else None
         res = t.accept(ev)
-        if res.status in ("accepted", "voided") and ev["kind"] in ("post", "digest", "evidence"):
+        if res.status in ("accepted", "voided") and _rated(ev["kind"]):
             self.recv.setdefault((t.id, ev["author"]), deque()).append(self.clock())
         self._persist(t, n_wait, void_before)
         return res

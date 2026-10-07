@@ -71,13 +71,16 @@ class RefusalText(unittest.TestCase):
         self.assertLessEqual(len(V.refusal(V.decl(), decl("1.0", [1, 0], list(range(1, 9))), 99) or ""), V.MAX_WHY)
         self.assertLess(V.MAX_WHY, 200)                                  # (a 0.1.x asker keeps 200 characters of a why)
 
-    def test_thread_format_is_the_genesis_v(self):
-        w = World()
-        self.assertEqual(V.thread_format(w.t), 1)
-        for g in [{"v": 2}, {"v": True}, {"v": "2"}, {"v": 0}, {"v": -1}, {}, None, 7]:
+    def test_thread_format_is_the_threads_format_which_is_the_genesis_v(self):
+        from sigilnet.build import make_genesis
+        from sigilnet.thread import Thread
+        ids = World().ids
+        for fmt in (1, 2):
+            self.assertEqual(V.thread_format(Thread(make_genesis(ids["arya"], "t", [(ids["sansa"], "member")], fmt=fmt))), fmt)
+        for bad in (True, "2", 0, -1, None, 7.5):
             class T:
-                genesis = g
-            self.assertIs(V.thread_format(T()), g["v"] if isinstance(g, dict) and type(g.get("v")) is int and g["v"] >= 1 else 1, g)
+                format = bad
+            self.assertEqual(V.thread_format(T()), 1, bad)
         self.assertEqual(V.thread_format(object()), 1)
 
 
