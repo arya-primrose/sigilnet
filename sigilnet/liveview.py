@@ -178,10 +178,10 @@ def _digest_line(e: dict) -> str:
 class Renderer:
     """Turns events into lines. Knows the width, the colours and the day of the last block (to print a date line when it changes)."""
 
-    def __init__(self, *, width: int | None = None, color: bool = False, max_lines: int | None = DEFAULT_LINES, multi: bool = False):
+    def __init__(self, *, width: int | None = None, color: bool = False, max_lines: int | None = DEFAULT_LINES, annotate: bool = True):
         w = width or shutil.get_terminal_size((100, 24)).columns
         self.width = max(MIN_WIDTH, min(MAX_WIDTH, w))
-        self.c, self.max_lines, self.multi, self.day = Style(color), max_lines, multi, None
+        self.c, self.max_lines, self.annotate, self.day = Style(color), max_lines, annotate, None
 
     def day_line(self, ts: float) -> list:
         day = time.strftime("%a %d %b %Y", time.localtime(ts))
@@ -201,17 +201,24 @@ class Renderer:
         e = t.events[i]
         when = time.strftime("%H:%M:%S", time.localtime(e["ts"]))
         out = self.day_line(e["ts"])
-        pre = self.c("2", f"[{t.id[:8]}] ") if self.multi else ""
+        pre = self.c("2", f"[{t.id[:8]}] ")                         # always: a message copied out of the screen still says which thread it is from
         tag = self.c("2", f"[{i[:8]}]")
         if e["kind"] in ("genesis", "member_add", "member_remove", "revoke", "rules_update", "checkpoint", "owner_transfer", "owner_takeover", "close"):
-            out.append(f"{self.c('2', when)}  {pre}{self.c('2', '* ' + _admin_line(t, e))}")
+            line = "* " + _admin_line(t, e)
+            room = self.width - GUTTER - 11                                         # (a long title or name is cut to the width, like the headers)
+            out.append(f"{self.c('2', when)}  {pre}{self.c('2', line if cells(line) <= room else cut(line, room - 3) + '...')}")
             return out
         author = name_of(t, e["author"])
-        who = self.c(f"1;{author_colour(e['author'])}", author)
         to = e["body"].get("to") if e["kind"] == "post" else None
         names = [name_of(t, a) for a in to[:8] if isinstance(a, str)] if isinstance(to, list) else []
         arrow = (" -> " + ", ".join(names) + (f" +{len(to) - 8}" if len(to) > 8 else "")) if names else ""
-        head_plain = f"{when}  {'[' + t.id[:8] + '] ' if self.multi else ''}{author}{arrow}"
+        room = self.width - GUTTER - 11 - 10 - 1          # what is left of the line after the time, the thread label and the event id
+        if cells(author) + cells(arrow) > room:                                    # a long name or many recipients: cut the recipients first, then the name
+            arrow = cut(arrow, max(0, room - cells(author)))
+            if cells(author) > room:
+                author = cut(author, max(1, room - 3)) + "..."
+        who = self.c(f"1;{author_colour(e['author'])}", author)
+        head_plain = f"{when}  [{t.id[:8]}] {author}{arrow}"
         pad = max(1, self.width - cells(head_plain) - 10)
         out.append(f"{self.c('2', when)}  {pre}{who}{self.c('2', arrow)}{' ' * pad}{tag}")
         pad_in = " " * GUTTER
@@ -226,7 +233,8 @@ class Renderer:
         if isinstance(rt, str):
             out.append(pad_in + self.c("2", self._reply_note(t, rt, body_width)))
         text = e["body"].get("text", "")
-        lines = wrap(convo.annotate(text, t.state()["members"]) if isinstance(text, str) else "", body_width)
+        text = text if isinstance(text, str) else ""
+        lines = wrap(convo.annotate(text, t.state()["members"]) if self.annotate else text, body_width)
         skipped = 0
         if self.max_lines is not None and len(lines) > self.max_lines:
             skipped, lines = len(lines) - self.max_lines, lines[:self.max_lines]
@@ -256,6 +264,20 @@ class Renderer:
         return s if cells(s) <= width else cut(s, max(0, width - 3)) + "..."
 
 
+def show(m, t, out, *, last: int | None = None, **style) -> None:
+    """`sigilnet show`: the transcript of ONE thread in the same layout as the live view (banner, then the events from the oldest, or the last `last`), printed once."""
+    r = Renderer(**style)
+    ids = t.topo(include_void=True)
+    for l in r.banner(m, t):
+        out(l)
+    if last is not None and len(ids) > last:
+        out(r.c("2", f"   ({len(ids) - last} earlier events not shown; --last N)"))
+        ids = ids[-last:] if last else []
+    for i in ids:
+        for l in r.event(m, t, i):
+            out(l)
+
+
 class Live:
     """Follows threads of a mirror. `start()` prints the headers and the last `last` events of each thread; `step()` prints what arrived since (call it about once a
     second); a thread that appears later (a rotation followed by the node) is announced and shown from its start."""
@@ -276,7 +298,6 @@ class Live:
     def start(self) -> int:
         self.m.refresh()
         tids = self._threads()
-        self.r.multi = len(tids) > 1
         for tid in tids:
             t = self.m.threads[tid]
             ids = t.topo(include_void=True)
@@ -295,7 +316,6 @@ class Live:
             t = self.m.threads[tid]
             seen = self.shown.get(tid)
             if seen is None:                                             # a thread that was not here at start
-                self.r.multi = True
                 self._print([""] + self.r.banner(self.m, t))
                 seen = self.shown[tid] = set()
             new = [i for i in t.topo(include_void=True) if i not in seen]

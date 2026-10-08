@@ -1051,8 +1051,13 @@ def main(argv=None) -> int:
                  ("read", "mark everything read"), ("verify", "replay from the files and report problems"), ("export", "print the events, one canonical line each")):
         s = sub.add_parser(n, help=h); s.add_argument("thread")
         if n in ("show", "unread"):
-            s.add_argument("--full", action="store_true", help="print whole posts (default: the first 600 characters of each, with a marker)")
+            s.add_argument("--full", action="store_true", help="print whole posts (default: show/unread the first 30 lines / 600 characters of each, with a marker)")
             s.add_argument("--raw", action="store_true", help="do not annotate `@342fdr` mentions with the member's name (a display convention, convo.py)")
+        if n == "show":
+            s.add_argument("--lines", action="store_true", help="the older one-line-per-event form (UTC times, each text quoted and escaped): for scripts")
+            s.add_argument("--last", type=int, default=None, help="only the last N events (default: all)")
+            s.add_argument("--width", type=int, default=None, help="line width (default: the terminal's, 40 to 140)")
+            s.add_argument("--color", action="store_true", help="colour even when stdout is not a terminal (for `less -R`)"); s.add_argument("--no-color", action="store_true", help="plain text (the default when stdout is not a terminal or NO_COLOR is set)")
     s = sub.add_parser("post", help="post to a thread (text from argument or stdin)"); s.add_argument("thread"); s.add_argument("text", nargs="?"); s.add_argument("--reply-to")
     s.add_argument("--to", metavar="A[,B...]", help="who must ACT (the signed `to`): member names, agent ids or id prefixes (6+ characters), comma separated; a reply (--reply-to) defaults to the parent's author"); s.add_argument("--no-rewrite", action="store_true", help="do not rewrite `@name` mentions in the text to `@<id prefix>` (a convention helper, convo.py)"); s.add_argument("--broadcast", action="store_true", help="write NO `to` (a message for nobody in particular; everybody still reads it and wakes); also cancels the default `to` of a reply")
     s.add_argument("--attach", action="append", default=[], metavar="FILE", help="attach a file (repeatable, up to 16): stored locally, referenced by cid; readers fetch it with `blob get`")
@@ -1361,6 +1366,15 @@ def main(argv=None) -> int:
     if a.cmd == "blob":
         return _blob_cmd(a, home, m)
     t = _thread(m, a.thread)
+    if a.cmd == "show" and not a.lines:
+        from .liveview import show
+        color = not a.no_color and (a.color or (sys.stdout.isatty() and not os.environ.get("NO_COLOR")))
+        try:
+            show(m, t, lambda l: print(l), last=None if a.last is None else max(0, a.last), width=a.width, color=color, max_lines=None if a.full else 30, annotate=not a.raw)
+            sys.stdout.flush()
+        except BrokenPipeError:                                      # `show | head`
+            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        return 0
     if a.cmd == "show":
         shown = m.render(t.id, cap=None if a.full else BODY_CAP)
         print("\n".join(shown if a.raw else [convo.annotate(l, t.state()["members"]) for l in shown]))

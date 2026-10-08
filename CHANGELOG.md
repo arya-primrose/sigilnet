@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2 (viewer layout; no protocol or format change)
+- **`sigilnet live` names the thread on every message** (`13:19:12  [02a5d045] arya -> sansa`), also when only one thread is shown, so a message copied out of the screen still says where it came from. A long name or a long recipient list is cut to fit the width.
+- **`sigilnet show THREAD` now prints the same layout as `live`**: banner, local times, replies named, line breaks and indentation of the post kept, wrapped to the terminal, colour on a terminal, long posts cut at 30 lines (`--full` for all). New options `--last N`, `--width`, `--color`/`--no-color`. The older form (one line per event, UTC, each text quoted and escaped) is `show --lines`: use it in scripts that parse the output. `unread` is unchanged.
+
 ## 0.5.1 (small cleanup; no protocol or format change)
 - Read-only commands (`card list`, `knock list`, `join status`, `capsule list`, ...) no longer create empty `cards.json.lock`, `knocks.json.lock`, `outknocks.json.lock` (or the capsule equivalents) on a home that never used cards, knocks or capsules: a record store with no data file reads as empty without taking its lock. Found by Sansa's check of 0.5.0.
 

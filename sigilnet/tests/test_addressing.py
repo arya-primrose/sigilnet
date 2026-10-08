@@ -393,7 +393,8 @@ class Cli(Base):
         raw = self.cli("unread", self.tid, "--raw")[1]
         self.assertNotIn("(dave)", raw.splitlines()[0].split(":", 1)[1])
         shown = self.cli("show", self.tid)[1]
-        self.assertIn("-> you", shown)
+        self.assertIn("sansa -> arya", shown)                       # (the live layout names people; the older `show --lines` said "you")
+        self.assertIn("-> you", self.cli("show", self.tid, "--lines")[1])
         self.assertIn(f"@{d6} (dave)", shown)
         self.assertNotIn(f"@{d6} (dave)", self.cli("show", self.tid, "--raw")[1])
 

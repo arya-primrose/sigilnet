@@ -101,7 +101,7 @@ class Encrypted(Cli):
             rc, out, err = run(self.h, "post", self.tid[:8], "x", "--attach", str(args[0]))
             self.assertNotEqual(rc, 0)
             self.assertIn(msg, err)
-        self.assertEqual(len(run(self.h, "show", self.tid[:8])[1].splitlines()), 1, "nothing was posted")
+        self.assertEqual(len(run(self.h, "show", self.tid[:8], "--lines")[1].splitlines()), 1, "nothing was posted")
         rc, _, err = run(self.h, "post", self.tid[:8], "x", *sum((["--attach", self.f(b"1", f"{i}")] for i in range(17)), []))
         self.assertNotEqual(rc, 0)
         self.assertIn("at most 16", err)
@@ -116,7 +116,7 @@ class Encrypted(Cli):
             V.epoch_id_at = real
         self.assertNotEqual(rc, 0)
         self.assertIn("epoch changed", err)
-        self.assertEqual(len(run(self.h, "show", self.tid[:8])[1].splitlines()), 1, "nothing was posted")
+        self.assertEqual(len(run(self.h, "show", self.tid[:8], "--lines")[1].splitlines()), 1, "nothing was posted")
 
     def test_blob_get_refuses_unknown_and_ambiguous_cids(self):
         rc, out, _ = run(self.h, "post", self.tid[:8], "x", "--attach", self.f(b"one"))

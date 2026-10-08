@@ -187,9 +187,73 @@ class Cli(unittest.TestCase):
         run(self.a, "ingest", "-", inp=run(c, "export", tid)[1])
         out = run(self.a, "live", tid[:8], "--once", "--no-color", "--width", "80")[1]
         self.assertRegex(out, r"alice \([0-9a-z]{6}\) \(owner\), alice \([0-9a-z]{6}\) \(member\)")
-        heads = [l for l in out.splitlines() if re.match(r"\d\d:\d\d:\d\d  alice \(", l)]
+        heads = [l for l in out.splitlines() if re.match(r"\d\d:\d\d:\d\d  \[[0-9a-f]{8}\] alice \(", l)]
         self.assertEqual(len(heads), 2, out)
         self.assertEqual(len({re.search(r"alice \(([0-9a-z]{6})\)", l).group(1) for l in heads}), 2)
+
+    def test_every_message_names_its_thread_even_with_one_thread(self):
+        run(self.a, "post", self.tid, "first line\n\nsecond paragraph")
+        self.sync()
+        out = self.live()
+        heads = [l for l in out.splitlines() if re.match(r"\d\d:\d\d:\d\d  ", l)]
+        self.assertTrue(heads)
+        self.assertTrue(all(f"[{self.tid[:8]}]" in l for l in heads), heads)
+        self.assertTrue(all(len(l) <= 80 for l in out.splitlines()))
+
+    def test_show_has_the_live_layout_and_keeps_line_breaks(self):
+        run(self.a, "post", self.tid, "[ASK] first line\n\n- one\n- two", "--to", "bob")
+        self.sync()
+        rc, shown, err = run(self.b, "show", self.tid[:8], "--no-color", "--width", "80")
+        self.assertEqual(rc, 0, err)
+        live = self.live()
+        self.assertEqual(shown, live)                                         # the same banner, the same lines
+        self.assertIn("          - one\n          - two", shown)
+        self.assertRegex(shown, rf"\d\d:\d\d:\d\d  \[{self.tid[:8]}\] alice -> bob")
+        self.assertNotIn("Z alice", shown)                                    # not the older UTC one-line form
+
+    def test_show_last_and_raw_and_lines(self):
+        for n in range(5):
+            run(self.a, "post", self.tid, f"message {n}")
+        self.sync()
+        rc, out, err = run(self.b, "show", self.tid[:8], "--no-color", "--last", "2")
+        self.assertIn("message 4", out)
+        self.assertIn("message 3", out)
+        self.assertNotIn("message 2", out)
+        self.assertIn("earlier events not shown", out)
+        self.assertEqual(run(self.b, "show", self.tid[:8], "--last", "0")[0], 0)
+        old = run(self.b, "show", self.tid[:8], "--lines")[1]
+        self.assertRegex(old, r"\[[0-9a-f]{8}\] \d{4}-\d\d-\d\d \d\d:\d\d:\d\dZ alice")
+        run(self.a, "post", self.tid, f"hi {ESC}[2J there")
+        self.sync()
+        self.assertNotIn(f"{ESC}[2J", run(self.b, "show", self.tid[:8], "--color")[1])        # a post cannot send its own escape sequence
+
+    def test_a_long_admin_line_is_cut_to_the_width(self):
+        class T:
+            id = "t" * 32
+            states = {}
+            void_ids = set()
+            events = {"e" * 32: {"kind": "genesis", "author": "a" * 32, "ts": 0, "body": {"title": "T" * 300}, "parents": [], "seq": 0}}
+
+            def state(self):
+                return {"members": {}, "title": "x", "closed": False}
+        for w in (40, 80, 140):
+            lines = Renderer(width=w).event(None, T(), "e" * 32)
+            self.assertTrue(all(liveview.cells(l) <= w for l in lines), (w, lines))
+
+    def test_a_header_with_many_recipients_still_fits(self):
+        r = Renderer(width=40)
+        class T:
+            id = "t" * 32
+            states = {}
+            void_ids = set()
+            events = {"e" * 32: {"kind": "post", "author": "a" * 32, "ts": 0, "body": {"text": "x", "to": ["b" * 32, "c" * 32, "d" * 32]}, "parents": [], "seq": 1}}
+
+            def state(self):
+                return {"members": {"a" * 32: {"name": "alice", "role": "member"}, "b" * 32: {"name": "bobbybobbybobby", "role": "member"},
+                                    "c" * 32: {"name": "carolcarolcarol", "role": "member"}, "d" * 32: {"name": "dave", "role": "member"}}, "title": "x", "closed": False}
+        lines = r.event(None, T(), "e" * 32)
+        self.assertTrue(all(liveview.cells(l) <= 40 for l in lines), lines)
+        self.assertIn("[eeeeeeee]", lines[-2])
 
     def test_shows_title_members_names_and_hides_nothing_hostile(self):
         run(self.a, "post", self.tid, f"hello{ESC}[2J{ESC}]0;pwned\x07 ‮evil", "--to", "bob")

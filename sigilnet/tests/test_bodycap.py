@@ -60,14 +60,19 @@ class Cli(unittest.TestCase):
         self.bob_posts(self.big)
         out = run(self.a, "show", self.tid)[1]
         self.assertNotIn("END", out)
-        self.assertIn("more characters; use --full", out)
-        self.assertLess(len(out), 1600)
+        self.assertIn("more lines; --full", out)
+        self.assertLess(len(out), 4500)
         self.assertIn("END", run(self.a, "show", self.tid, "--full")[1])
+        lines = run(self.a, "show", self.tid, "--lines")[1]                    # the older form keeps its character cap
+        self.assertIn("more characters; use --full", lines)
+        self.assertLess(len(lines), 1600)
 
     def test_short_posts_and_other_commands_are_unchanged(self):
         self.bob_posts("short and sweet")
         self.assertIn("'short and sweet'", run(self.a, "unread", self.tid)[1])
-        self.assertNotIn("more characters", run(self.a, "show", self.tid)[1])
+        self.assertIn("short and sweet", run(self.a, "show", self.tid)[1])
+        self.assertNotIn("more characters", run(self.a, "show", self.tid, "--lines")[1])
+        self.assertNotIn("more lines", run(self.a, "show", self.tid)[1])
         self.bob_posts("C" * 5000)
         brief = json.loads(run(self.a, "brief", self.tid)[1])
         self.assertTrue(all(len(u["preview"]) <= 200 for u in brief["unread"]))

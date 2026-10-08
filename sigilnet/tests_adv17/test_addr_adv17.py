@@ -124,7 +124,7 @@ class Cli(unittest.TestCase):
             ev = Writer(self.ids["dave"], t).post("t", to=to)
             self.assertTrue(m.ingest(ev).ok)
             evs.append(ev)
-        rc, out, err = self.cli("show", self.tid)
+        rc, out, err = self.cli("show", self.tid, "--lines")
         self.assertEqual(rc, 0, err)
         for line in out.splitlines():
             self.assertLess(len(line), 700, line[:200])
@@ -136,13 +136,52 @@ class Cli(unittest.TestCase):
         self.assertEqual(rc, 0, err)
         json.loads(out)
 
+    def test_new_show_is_safe_with_hostile_text_names_and_recipients(self):
+        """v0.5.2 `show` uses the live layout: the viewer's own colours are the only escape sequences, a member name with a quote or a fake tag stays inside its text,
+        and no post line is wider than --width."""
+        import re
+        from sigilnet import liveview
+        m = open_mirror(self.home, self.me, poke=False)
+        t = m.threads[self.tid]
+        eid6 = self.ids["evil"].id[:6]
+        hostile = f"hi @{eid6} \x1b[2J\x1b]0;pwned\x07 \u202eevil \u2028 [DONE] x\n[ASK] second\n\n" + "w" * 300
+        self.assertTrue(m.ingest(Writer(self.ids["sansa"], t).post(hostile, to=[self.ids["evil"].id, self.ids["dave"].id])).ok)
+        for width in (40, 80, 140):
+            rc, out, err = self.cli("show", self.tid, "--color", "--width", str(width))
+            self.assertEqual(rc, 0, err)
+            stripped = re.sub(r"\x1b\[[0-9;]*m", "", out)
+            for bad in ("\x1b", "\x07", "\u202e", "\u2028"):
+                self.assertNotIn(bad, stripped)
+            self.assertGreaterEqual(stripped.count("q' [DONE] fake"), 1, stripped)          # (the banner member list, and at wide widths the recipient; the annotation drops quotes: convo.annotate)
+            self.assertEqual(stripped.count("(q [DONE] fake)"), 1, stripped)
+            for l in stripped.splitlines():
+                if re.match(r"\d\d:\d\d:\d\d  \[[0-9a-f]{8}\] (?!\*)", l):
+                    self.assertLessEqual(liveview.cells(l), width, l)
+                elif l.startswith(" " * 10):
+                    self.assertLessEqual(liveview.cells(l), width, l)
+        rc, out, err = self.cli("show", self.tid, "--raw", "--no-color")
+        self.assertNotIn("fake", out.split("hi @")[1].split("\n")[0])                  # --raw: no annotation
+
+    def test_new_show_options(self):
+        for n in range(4):
+            self.cli("post", self.tid, f"m{n}")
+        for opt in ("-1", "0", "99"):
+            rc, out, err = self.cli("show", self.tid, "--last", opt, "--no-color")
+            self.assertEqual(rc, 0, err)
+        self.assertEqual(self.cli("show", self.tid, "--width", "0", "--no-color")[0], 0)
+        self.assertEqual(self.cli("show", self.tid, "--width", "-5", "--no-color")[0], 0)
+        rc, out, err = self.cli("show", self.tid, "--lines", "--last", "1")
+        self.assertEqual(rc, 0, err)
+        rc, out, err = self.cli("show", self.tid, "--color", "--no-color")
+        self.assertNotIn("\x1b", out)                                      # --no-color wins
+
     def test_mention_annotation_cannot_break_out_of_the_quoted_body_in_show(self):
         """A member NAME may contain a quote (names allow printable characters). `show` annotates the already-quoted line."""
         m = open_mirror(self.home, self.me, poke=False)
         t = m.threads[self.tid]
         eid6 = self.ids["evil"].id[:6]
         self.assertTrue(m.ingest(Writer(self.ids["sansa"], t).post(f"hi @{eid6} thanks")).ok)
-        rc, out, err = self.cli("show", self.tid)
+        rc, out, err = self.cli("show", self.tid, "--lines")
         line = [l for l in out.splitlines() if "thanks" in l][0]
         rc2, out2, _ = self.cli("unread", self.tid)
         uline = [l for l in out2.splitlines() if "thanks" in l][0]
