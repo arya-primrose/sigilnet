@@ -24,7 +24,7 @@ from . import knock
 from .envelope import EnvCodec
 from .inbox import Inbox
 from .mirror import Mirror
-from .node import Node, PeerBook
+from .node import PULL_INTERVAL, Node, PeerBook
 from .publicblob import PublicBlob
 from .publicread import PublicRead
 from .sync import SyncServer
@@ -42,7 +42,8 @@ from .tcplink import TcpCarrier, resolve_bind           # (registers the "tcp" e
 from .torlink import BOOTSTRAP_TIMEOUT, TorNode           # the composition root: the ONLY protocol-side module that names the Tor carrier
 
 NOTIFY_TYPES = {"tor": "onion", "tcp": "tcp"}                       # config name -> carrier type (endpoint type)
-DEFAULTS = {"local_port": None, "virtual_port": 47200, "service_port_base": 47210, "bridges": [], "carrier": "tor", "carriers": ["tor"], "notify_via": None, "auto_rotate": False, "follow_rotation": False}      # local_port: the legacy ONE shared service (off)
+DEFAULTS = {"local_port": None, "virtual_port": 47200, "service_port_base": 47210, "bridges": [], "carrier": "tor", "carriers": ["tor"], "notify_via": None, "auto_rotate": False, "follow_rotation": False, "pull_interval": None}      # local_port: the legacy ONE shared service (off)
+PULL_MIN = 10.0                                    # the shortest periodic pull a config may ask for
 TOR_RESTARTS, TOR_RESTART_WINDOW = 3, 1800.0    # a dead carrier is restarted at most this many times inside any rolling window (DESIGN_tor_restart.md); then the node exits, loudly
 TOR_BACKOFF = (5.0, 30.0, 120.0)     # seconds before restart 1, 2, 3 of the window
 BLOB_GC_EVERY = 3600.0               # seconds between blob garbage collections (and one at start)
@@ -83,6 +84,11 @@ def load_config(home: Path) -> dict:
             if not isinstance(raw[k], bool):
                 raise ValueError(f"node_config.json: {k} must be true or false")
             cfg[k] = raw[k]
+    if "pull_interval" in raw and raw["pull_interval"] is not None:  # seconds between the periodic pulls from each peer (default 300): a node nobody can notify (no door, e.g. the human's observer seat) wants a shorter one
+        p = raw["pull_interval"]
+        if isinstance(p, bool) or not isinstance(p, (int, float)) or not PULL_MIN <= p <= PULL_INTERVAL:
+            raise ValueError(f"node_config.json: pull_interval must be a number of seconds from {PULL_MIN:g} to {PULL_INTERVAL:g}, or absent")
+        cfg["pull_interval"] = float(p)
     if "tcp" in raw:
         t = raw["tcp"]
         if not isinstance(t, dict) or not set(t) <= {"bind", "port_base", "advertise", "allow_public"} or "bind" not in t or "port_base" not in t:
@@ -367,7 +373,8 @@ def run(home: Path, me: Identity, *, seconds: float = 0, offline: bool = False, 
                 c.index_credentials(_credential_pairs(peers, t))
             except (CarrierError, OSError, ValueError) as e:        # a damaged held.json used to break dials only: it must not stop the NODE from starting
                 out(f"  locator: held.json damaged, credentials not indexed by node id ({type(e).__name__})")
-    node = Node(m, me, peers, home / "node.json", dialer, log=nlog, locators=dialer, retry_wait=max(getattr(c, "retry_wait", 30.0) for c in carriers.values()))
+    node = Node(m, me, peers, home / "node.json", dialer, log=nlog, locators=dialer, retry_wait=max(getattr(c, "retry_wait", 30.0) for c in carriers.values()),
+                pull_interval=cfg.get("pull_interval") or PULL_INTERVAL)
     node.pv = PeerVer(home / "peerver.json")
     node.rot = AutoRotator(m, me, peers, home / "rotation.json", log=nlog, auto_rotate=cfg["auto_rotate"], follow_rotation=cfg["follow_rotation"])      # (opt-in: DESIGN_autorotate.md; the verification of automatic follows runs whatever the switches say)
     node.rot.last_error = lambda peer, tid: (node.jobs.get(node._key(peer, tid, "pull")) or {}).get("err", "")      # (so an expiry can say WHY: the owner's gating text names the thread format)

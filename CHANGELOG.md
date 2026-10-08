@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.5.3 (a setting for nodes nobody can notify; no protocol or format change)
+- **`sigilnet node pull-interval [SECONDS|default]`** (`pull_interval` in `node_config.json`, 10 to 300 seconds, default 300 as before). A node asks each peer for news this often even when nobody told it. A node with no door of its own, such as the read-only seat of a person who watches with `sigilnet live`, cannot be notified and so trails the conversation by up to the interval: set it to about 30. A running node picks the value up at its next start. Cost: at 10 seconds about 6 to 12 requests per minute for each thread and peer; the serving side allows 240 a minute per requester. Nothing changes for a node that does not set it.
+
 ## 0.5.2 (viewer layout; no protocol or format change)
 - **`sigilnet live` names the thread on every message** (`13:19:12  [02a5d045] arya -> sansa`), also when only one thread is shown, so a message copied out of the screen still says where it came from. A long name or a long recipient list is cut to fit the width.
 - **`sigilnet show THREAD` now prints the same layout as `live`**: banner, local times, replies named, line breaks and indentation of the post kept, wrapped to the terminal, colour on a terminal, long posts cut at 30 lines (`--full` for all). New options `--last N`, `--width`, `--color`/`--no-color`. The older form (one line per event, UTC, each text quoted and escaped) is `show --lines`: use it in scripts that parse the output. `unread` is unchanged.

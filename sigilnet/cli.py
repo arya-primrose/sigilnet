@@ -566,6 +566,24 @@ def _node_cmd(a, home: Path, me: Identity, m: Mirror) -> int:
         if want == "tcp":
             print("NOTE: every peer of this node will learn the address of our tcp door for it, i.e. this machine's IP address, over WHATEVER carrier the pull uses (Tor included); a node that supports tcp is not hiding it.")
         return 0
+    if a.action == "pull-interval":
+        if len(a.args) > 1:
+            sys.exit("node pull-interval [SECONDS|default]   (how often this node asks each peer for news even when nobody told it; default 300, from 10 to 300: a node with no door of its own, like an observer seat, wants about 30)")
+        if not a.args:
+            print(f"pull_interval: {cfg.get('pull_interval') or noderun.PULL_INTERVAL:g} seconds{'' if cfg.get('pull_interval') else ' (the default)'}")
+            return 0
+        if a.args[0] == "default":
+            cfg["pull_interval"] = None
+        else:
+            try:
+                cfg["pull_interval"] = float(a.args[0])
+            except ValueError:
+                sys.exit("pull-interval takes a number of seconds or the word default")
+            if not noderun.PULL_MIN <= cfg["pull_interval"] <= noderun.PULL_INTERVAL:
+                sys.exit(f"pull-interval must be from {noderun.PULL_MIN:g} to {noderun.PULL_INTERVAL:g} seconds")
+        noderun.save_config(home, cfg)
+        print(f"pull_interval set to {a.args[0]}; a running node picks it up at its next start (`stop`, `start`).")
+        return 0
     if a.action in ("auto-rotate", "follow-rotation"):
         key = a.action.replace("-", "_")
         if len(a.args) > 1 or (a.args and a.args[0] not in ("on", "off")):
@@ -1083,8 +1101,8 @@ def main(argv=None) -> int:
     s.add_argument("--allow-ip", action="append", default=[], help="serve: accept connections only from this address (repeatable)")
     s.add_argument("--deadline", type=float, default=900.0, help="pull: give up after this many seconds in total")
     s.add_argument("--peer-id", help="pull: the peer's agent id; binds the signed request to that server (a captured request cannot be replayed elsewhere)")
-    s = sub.add_parser("node", help="Tor node (step 3): init | address [NAME] | auth LABEL | authorize NAME PUBKEY [--agent ID] | revoke NAME | doors | notify-via [tcp|tor|none] | auto-rotate [on|off] | follow-rotation [on|off] | run | status")
-    s.add_argument("action", choices=["init", "address", "auth", "authorize", "revoke", "doors", "notify-via", "auto-rotate", "follow-rotation", "run", "status"]); s.add_argument("args", nargs="*")
+    s = sub.add_parser("node", help="Tor node (step 3): init | address [NAME] | auth LABEL | authorize NAME PUBKEY [--agent ID] | revoke NAME | doors | notify-via [tcp|tor|none] | pull-interval [SECONDS|default] | auto-rotate [on|off] | follow-rotation [on|off] | run | status")
+    s.add_argument("action", choices=["init", "address", "auth", "authorize", "revoke", "doors", "notify-via", "pull-interval", "auto-rotate", "follow-rotation", "run", "status"]); s.add_argument("args", nargs="*")
     s.add_argument("--local-port", type=int, help="init: serve ONE shared onion service on this local port (legacy; the default is one service per peer)")
     s.add_argument("--virtual-port", type=int); s.add_argument("--service-port-base", type=int, help="init: first local port for the per-peer services")
     s.add_argument("--agent", help="authorize: only requests signed by this agent id are answered on this peer's service")
