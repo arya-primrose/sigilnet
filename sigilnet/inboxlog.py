@@ -1,5 +1,5 @@
 """`inbox.jsonl`: the wake file (DESIGN_node_daemon.md section 5, P2). One POINTER per event that should wake the agent: `{"seq": N, "t": time, "thread": tid}`, plus
-`"guest": true` for a guest request waiting for the owner. Never a sender, a kind, an event id or any text: the file leaks nothing on disk. The first line of every
+`"guest": true` for a guest request waiting for the owner and `"knock": true` for a newcomer's knock waiting for the owner's approval. Never a sender, a kind, an event id or any text: the file leaks nothing on disk. The first line of every
 generation is `{"gen": "<16 hex>"}`; a consumer's cursor holds (gen, seq), and a different generation means "start from 0" (it may announce twice, never miss).
 Append-only, one `os.write` per line with fsync. Writers hold the Mirror lock (the caller does; this class takes none). A torn last line is skipped by readers and cut
 off by the next writer. The wake decision itself is made by the Mirror from the plaintext it holds at that moment and is not recorded."""
@@ -14,6 +14,7 @@ from typing import Iterable
 FILE = "inbox.jsonl"
 MAX_BYTES = 8 * 1024 * 1024            # past this the writer rebuilds the file with a new generation (only still-unread events survive)
 GUEST_GAP = 300.0                      # a thread gets at most one guest line per this many seconds (a stranger's flood must not wake the session in a loop)
+KNOCK_GAP = 60.0                       # ... and at most one knock line (a newcomer waiting for the owner's approval) per this many seconds
 
 
 def _line(d: dict) -> bytes:
@@ -34,6 +35,8 @@ def _entry(raw: bytes):
     out = {"seq": d["seq"], "t": float(t), "thread": d["thread"]}
     if d.get("guest") is True:
         out["guest"] = True
+    if d.get("knock") is True:
+        out["knock"] = True
     return out
 
 
@@ -135,12 +138,14 @@ class InboxLog:
                     last = max(last, e["seq"])
                     if e.get("guest"):
                         guests[e["thread"]] = e["t"]
+                    if e.get("knock"):
+                        guests["knock:" + e["thread"]] = e["t"]
             off += cut
         self._cache = (ino, off, last, guests)
         return last, guests
 
-    def append(self, thread: str, guest: bool = False):
-        """Write one line; returns its seq, or None when a GUEST line is collapsed (the last guest line of that thread is newer than GUEST_GAP)."""
+    def append(self, thread: str, guest: bool = False, knock: bool = False):
+        """Write one line; returns its seq, or None when a GUEST line is collapsed (the last guest line of that thread is newer than GUEST_GAP) or a KNOCK line is (KNOCK_GAP)."""
         if not self.valid():
             self._write_new([])
         last, guests = self._scan()
@@ -148,6 +153,10 @@ class InboxLog:
         if guest:
             prev = guests.get(thread)
             if prev is not None and 0 <= now - prev < GUEST_GAP:         # (a line from the future never silences a wake)
+                return None
+        if knock:
+            prev = guests.get("knock:" + thread)
+            if prev is not None and 0 <= now - prev < KNOCK_GAP:
                 return None
         fd = os.open(self.path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
         try:
@@ -165,6 +174,8 @@ class InboxLog:
             d = {"seq": last + 1, "t": round(now, 3), "thread": thread}
             if guest:
                 d["guest"] = True
+            if knock:
+                d["knock"] = True
             line = _line(d)
             os.write(fd, line)
             os.fsync(fd)
@@ -174,6 +185,8 @@ class InboxLog:
         g2 = dict(guests)
         if guest:
             g2[thread] = d["t"]
+        if knock:
+            g2["knock:" + thread] = d["t"]
         self._cache = (ino, new_size, last + 1, g2)                  # the scan state moves with our own write: no rescan of the whole file at the next append
         return last + 1
 

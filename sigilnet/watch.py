@@ -4,6 +4,7 @@
   WATCH started: <N> unannounced
   INBOX <seq> <thread[:8]>: run sigilnet unread <thread[:8]>
   INBOX <seq> <thread[:8]> (guest request): run 'sigilnet requests list <thread[:8]>'
+  INBOX <seq> <thread[:8]> (knock): a newcomer waits for your approval: run 'sigilnet knock list'
   INBOX x<K> (burst): run sigilnet list                          (more than burst_n lines inside burst_s seconds, by the lines' own times, in one step)
   REMINDER: <N> unread in <T> thread(s): run sigilnet list         (every `remind` seconds while something announced is still unread)
 
@@ -50,7 +51,8 @@ class Watcher:
         out = []
         for e in entries:
             t8 = e["thread"][:8]
-            out.append(f"INBOX {e['seq']} {t8} (guest request): run 'sigilnet requests list {t8}'" if e.get("guest") else f"INBOX {e['seq']} {t8}: run sigilnet unread {t8}")
+            out.append(f"INBOX {e['seq']} {t8} (guest request): run 'sigilnet requests list {t8}'" if e.get("guest") else
+                       f"INBOX {e['seq']} {t8} (knock): a newcomer waits for your approval: run 'sigilnet knock list'" if e.get("knock") else f"INBOX {e['seq']} {t8}: run sigilnet unread {t8}")
         return out
 
     def step(self) -> list:
@@ -65,8 +67,10 @@ class Watcher:
         now = self.clock()
         if not lines and self.last_note is not None and now - self.last_note >= self.remind:
             n, t = self.unread()
-            if n:
-                lines = [f"REMINDER: {n} unread in {t} thread(s): run sigilnet list"]
+            from .knock import waiting_knocks
+            k = waiting_knocks(self.home)                                # a newcomer's knock is waiting for the owner's decision: it is not an unread event, so it is counted apart
+            if n or k:
+                lines = [f"REMINDER: {n} unread in {t} thread(s)" + (f", {k} knock(s) waiting for your approval" if k else "") + ": run sigilnet list" + (" and sigilnet knock list" if k else "")]
             else:
                 self.last_note = None                                    # everything announced has been handled: nothing to remind about
         for l in lines:

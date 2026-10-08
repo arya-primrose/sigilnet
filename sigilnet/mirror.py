@@ -104,8 +104,8 @@ class Mirror:
         e = t.events.get(i)
         return e is not None and i not in t.void_ids and e["kind"] in UNREAD_KINDS and e["author"] != self.me
 
-    def _inbox_append(self, tid: str, guest: bool = False) -> None:
-        self.inbox.append(tid, guest)
+    def _inbox_append(self, tid: str, guest: bool = False, knock: bool = False) -> None:
+        self.inbox.append(tid, guest, knock)
         if self.inbox.size() > inboxlog.MAX_BYTES:
             self._rebuild_inbox_locked()
 
@@ -131,6 +131,13 @@ class Mirror:
             return
         with self._lock():
             self._inbox_append(tid, True)
+
+    def note_knock(self, tid: str) -> None:
+        """A newcomer's knock waits for the owner's approval (knock.py): one wake line, collapsed per thread by KNOCK_GAP. Ids only: no name, no note."""
+        if self.inbox is None:
+            return
+        with self._lock():
+            self._inbox_append(tid, False, True)
 
     # ---------- locking and files ----------
     def _lock(self):

@@ -567,11 +567,11 @@ class TorNode(Carrier):
 
     def add_public_service(self, name: str, kind: str) -> int:
         """A PUBLIC door (spec 5.1): an onion service with NO client authorization, so anyone who knows the address can connect. `kind` decides
-        which program answers it ("read": unsigned read-only sync of public threads; "inbox": the write-only guest inbox). Returns its local port."""
+        which program answers it ("read": unsigned read-only sync of public threads; "inbox": the write-only guest inbox; "knock": the open-invitation door). Returns its local port."""
         if not NAME_RE.fullmatch(name or ""):
             raise ValueError("name: 1-32 characters of a-z 0-9 _ -")
         if kind not in PUBLIC_KINDS:
-            raise ValueError("a public door is a read door or an inbox door")
+            raise ValueError("a public door is a read door, an inbox door or a knock door")
         with self._locked():
             self.services = self._load_services()
             svc = self.services.get(name)

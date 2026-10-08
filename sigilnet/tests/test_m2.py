@@ -777,9 +777,12 @@ class JoinWorker(unittest.TestCase):
         calls = []
         carriers = {"tcp": mock.Mock(), "onion": mock.Mock()}
         jw = noderun._JoinWorker(Path(tempfile.mkdtemp()), carriers, Identity.generate("me"), mock.Mock(), calls.append, usable=lambda t: t == "tcp")
-        with mock.patch.object(noderun.capsule, "sweep", side_effect=lambda home, cs, **k: calls.append((sorted(c for c in k.get("skip", [])), len(cs)))):
+        knocks = []
+        with mock.patch.object(noderun.capsule, "sweep", side_effect=lambda home, cs, **k: calls.append((sorted(c for c in k.get("skip", [])), len(cs)))), \
+                mock.patch.object(noderun.knock, "sweep", side_effect=lambda home, cs, **k: knocks.append(list(cs))):
             jw.tick()
         self.assertEqual(calls, [(["onion"], 2)])
+        self.assertEqual(knocks, [[carriers["tcp"]]])                # the card sweep, too, only over the carriers that are up
         with self.assertRaises(Exception):
             jw._transport({"type": "onion", "addr": "a" * 56 + ".onion:1"})
         carriers["tcp"].dial.return_value = "tr"

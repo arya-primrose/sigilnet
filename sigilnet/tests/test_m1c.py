@@ -817,6 +817,9 @@ class TorNodeSafety(unittest.TestCase):
                 while time.time() < end and tn.poll_ready()[0] == "starting":
                     time.sleep(0.05)
                 self.assertEqual(tn.poll_ready()[0], "ready", f"round {i}: " + tn.down_reason())
+                late = time.time() + 20                                  # (tor says 'ready' before it has installed its SIGHUP handler; on a loaded host that takes seconds: keep racing until a reload really lands)
+                while time.time() < late and True not in sent:
+                    time.sleep(0.05)
                 time.sleep(0.3)
                 self.assertTrue(tn.running(), f"round {i}: tor died (a SIGHUP before its handlers exist kills it)")
             finally:

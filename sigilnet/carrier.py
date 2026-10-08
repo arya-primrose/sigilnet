@@ -3,7 +3,7 @@
 The protocol (events, threads, envelopes, sync, capsule logic, guest/public doors) speaks in four carrier-neutral words:
   * ENDPOINT   {"type": "onion", "addr": "<56>.onion:47200"}   where an agent can be dialed. Same shape as the signed `endpoint` event of thread.py
                (type <= 16 chars, addr <= 256). The carrier that owns a `type` parses and validates its `addr`.
-  * DOOR       a named entry point WE offer, with a kind (peer / read / inbox / join, carrier.KINDS): the protocol decides what answers it, the carrier decides how
+  * DOOR       a named entry point WE offer, with a kind (peer / read / inbox / join / knock, carrier.KINDS): the protocol decides what answers it, the carrier decides how
                it is reached. Every door forwards to a loopback TCP port on which the PROTOCOL layer runs its own guarded server (tcp.py): framing, MAX_REQ/MAX_RESP,
                deadlines and connection caps are NOT carrier business (one guard for every carrier).
   * CREDENTIAL a typed, opaque key: PUBLIC ({"type","key"}: lets its holder reach a door of ours) or SECRET (`Secret`: lets US reach a door of theirs; never printed).
@@ -28,8 +28,8 @@ TYPE_MAX = 16
 ADDR_MAX = 256
 TYPE_RE = re.compile(r"[a-z0-9_-]{1,16}")
 NAME_RE = re.compile(r"[a-z0-9_-]{1,32}")                 # a door name
-KINDS = ("peer", "read", "inbox", "join")
-PUBLIC_KINDS = ("read", "inbox")
+KINDS = ("peer", "read", "inbox", "join", "knock")
+PUBLIC_KINDS = ("read", "inbox", "knock")
 
 
 class CarrierError(Exception):

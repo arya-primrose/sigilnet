@@ -228,15 +228,18 @@ class Store:
                 os.close(s.fd)
         return L(self.lockp)
 
-    def _load(self) -> dict:
+    def _raw(self) -> dict:
         try:
             raw = json.loads(self.path.read_text())
         except (OSError, ValueError):
             return {}
-        return {k: v for k, v in raw.items() if self.ok(k, v)} if isinstance(raw, dict) else {}
+        return raw if isinstance(raw, dict) else {}
+
+    def _load(self) -> dict:
+        return {k: v for k, v in self._raw().items() if self.ok(k, v)}
 
     def _save(self, d: dict) -> None:
-        tmp = self.path.with_name(f"capsules.json.{os.getpid()}.{uuid.uuid4().hex[:6]}.tmp")
+        tmp = self.path.with_name(f"{self.path.name}.{os.getpid()}.{uuid.uuid4().hex[:6]}.tmp")
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as f:
             json.dump(d, f, sort_keys=True)
@@ -247,10 +250,15 @@ class Store:
             return self._load()
 
     def edit(self, fn):
+        """Read, let `fn` change the records, write. The file is written ONLY when the records differ from what was on disk (records that fail `ok` count as a difference: they are cleaned
+        away as before); an edit that changes nothing costs no write, so a periodic sweep on an idle node touches no disk."""
         with self._locked():
-            d = self._load()
+            raw = self._raw()
+            before = json.dumps(raw, sort_keys=True)                  # (a snapshot: the records below are the same objects, `fn` changes them in place)
+            d = {k: v for k, v in raw.items() if self.ok(k, v)}
             out = fn(d)
-            self._save(d)
+            if json.dumps(d, sort_keys=True) != before:
+                self._save(d)
             return out
 
 
@@ -472,6 +480,44 @@ def sweep(home, carriers, *, clock=time.time, skip=(), served=None) -> list:
     return gone
 
 
+def offers_problem(by_type: dict, offers, types) -> str | None:
+    """Why a list of offers (the joiner's doors) is refused: shape, distinct carrier types of THIS capsule that we run (`by_type`: {type: carrier}), and each address passes the carrier's own rules
+    (R1: loopback, link-local, our own door... since any IPv4 or IPv6 address may be dialed now). None = fine."""
+    if not isinstance(offers, list) or not 1 <= len(offers) <= len(types):
+        return "the number of offers"
+    seen = []
+    for o in offers:
+        if not isinstance(o, dict) or set(o) != {"endpoint", "credential"}:
+            return "an offer is not {endpoint, credential}"
+        try:
+            ep, cr = check_endpoint(o["endpoint"]), check_credential(o["credential"])
+        except ValueError as e:
+            return str(e)
+        if ep["type"] != cr["type"] or ep["type"] not in types or ep["type"] not in by_type or ep["type"] in seen:
+            return "an offer's carrier"
+        why = by_type[ep["type"]].locator_problem(ep["addr"])
+        if why:
+            return f"the {ep['type']} address: {why}"
+        seen.append(ep["type"])
+    return None
+
+
+def sealed_keys(m, tid: str, req: dict):
+    """[] for a plaintext thread; for an encrypted one the key of every epoch on the current chain, each sealed to the JOINER's kex key (`req`: {kex, agent}, from its SIGNED request);
+    None if we cannot provide them (then the answer waits)."""
+    from .envelope import chain_epoch_ids, seal_key
+    t = m.threads.get(tid)
+    codec = m.codec
+    if t is None or not getattr(codec, "is_encrypted", lambda _: False)(t.id):
+        return []
+    ring, out = codec.ring(t.id), []
+    for kid in chain_epoch_ids(t)[:64]:
+        got = ring.get(kid)
+        if got is not None and got[1]:
+            out.append({"id": kid, "sealed": seal_key(req["kex"], req["agent"], t.id, kid, got[0]), "conf": ring.conf(kid)})
+    return out or None
+
+
 # ---------------------------------------------------------------- owner side: what the join door answers
 
 class JoinServer:
@@ -507,25 +553,7 @@ class JoinServer:
         return {"t": "refused"}
 
     def offers_problem(self, offers, types) -> str | None:
-        """Why a list of offers (the joiner's doors) is refused: shape, distinct carrier types of THIS capsule that we run, and each address passes the carrier's own rules (R1: loopback, link-local,
-        our own door... since any IPv4 or IPv6 address may be dialed now). None = fine."""
-        if not isinstance(offers, list) or not 1 <= len(offers) <= len(types):
-            return "the number of offers"
-        seen = []
-        for o in offers:
-            if not isinstance(o, dict) or set(o) != {"endpoint", "credential"}:
-                return "an offer is not {endpoint, credential}"
-            try:
-                ep, cr = check_endpoint(o["endpoint"]), check_credential(o["credential"])
-            except ValueError as e:
-                return str(e)
-            if ep["type"] != cr["type"] or ep["type"] not in types or ep["type"] not in self.by_type or ep["type"] in seen:
-                return "an offer's carrier"
-            why = self.by_type[ep["type"]].locator_problem(ep["addr"])
-            if why:
-                return f"the {ep['type']} address: {why}"
-            seen.append(ep["type"])
-        return None
+        return offers_problem(self.by_type, offers, types)
 
     def _request(self, cid: str, req: dict) -> dict:
         if set(req) != {"t", "token", "sign", "kex", "name", "offers", "sig"}:
@@ -568,19 +596,7 @@ class JoinServer:
         return result["r"]
 
     def _sealed_keys(self, rec: dict):
-        """[] for a plaintext thread; for an encrypted one the key of every epoch on the current chain, each sealed to the JOINER's kex key (from its SIGNED request);
-        None if we cannot provide them (then the answer waits)."""
-        from .envelope import chain_epoch_ids, seal_key
-        t = self.m.threads.get(rec["thread"])
-        codec = self.m.codec
-        if t is None or not getattr(codec, "is_encrypted", lambda _: False)(t.id):
-            return []
-        ring, r, out = codec.ring(t.id), rec["req"], []
-        for kid in chain_epoch_ids(t)[:64]:
-            got = ring.get(kid)
-            if got is not None and got[1]:
-                out.append({"id": kid, "sealed": seal_key(r["kex"], r["agent"], t.id, kid, got[0]), "conf": ring.conf(kid)})
-        return out or None
+        return sealed_keys(self.m, rec["thread"], rec["req"])
 
     def _status(self, cid: str, token: str) -> dict:
         rec = self.store.all().get(cid, {})

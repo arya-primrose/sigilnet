@@ -778,6 +778,97 @@ def _capsule_cmd(a, home: Path, me: Identity, m: Mirror) -> int:
         sys.exit(f"capsule: {e}")
 
 
+def _duration(text) -> int:
+    t = str(text).strip().lower()
+    mult = {"s": 1, "m": 60, "h": 3600, "d": 86400}.get(t[-1:], None)
+    try:
+        return int(t[:-1]) * mult if mult else int(t)
+    except ValueError:
+        sys.exit(f"error: not a duration: {text!r} (examples: 12h, 7d, 3600)")
+
+
+def _knock_cmd(a, home: Path, me: Identity, m: Mirror) -> int:
+    from . import knock as KN
+    from . import noderun
+    from .mirror import _safe
+    from .node import PeerBook
+    cfg = noderun.load_config(home)
+    carriers = noderun.make_carriers(home, cfg, offline=True)
+    cs = list(carriers.values())
+
+    def waiter(carrier, name):
+        end = time.time() + a.wait
+        while time.time() < end:
+            ep = carrier.door_endpoint(name)
+            if ep:
+                return ep
+            time.sleep(2)
+        return carrier.door_endpoint(name)
+    try:
+        if a.cmd == "card":
+            if a.action == "create":
+                if not a.arg:
+                    sys.exit("card create THREAD [--ttl 7d] [--pow 20] [--max-pending 20] [--yes-history]")
+                t = _thread(m, a.arg)
+                block, cid, fp = KN.create_card(home, cs, me, m, t.id, ttl=_duration(a.ttl), pow_bits=a.pow_bits, max_pending=a.max_pending, yes_history=a.yes_history, wait_address=waiter)
+                print(f"card {cid} for {t.state()['title']!r}, valid {_duration(a.ttl) // 3600} h. A PUBLIC knock door is open on this node while the card is open.\n\n{block}\n")
+                print("Give the card to the newcomer WITH the instructions URL (it holds no secret and can be used by several people). Everyone who has the card can knock, so treat it like an invitation, not a password:")
+                print("  - every knock needs YOUR approval, and you type the fingerprint the newcomer reads to you (`knock accept ID --fingerprint ...`); a claimed name proves nothing.")
+                print(f"  - a knock costs the newcomer about {2 ** a.pow_bits:,} hashes of work; at most {a.max_pending} knocks wait at once; `card close {cid}` shuts the door at any time.")
+                print(f"YOUR fingerprint (the newcomer can compare it): {fp}")
+                if m.codec.is_encrypted(t.id):
+                    print("The thread is ENCRYPTED: an approved newcomer receives every epoch key, so can read the whole history.")
+                return 0
+            if a.action == "close":
+                print("closed; the door goes when no answer is waiting to be collected" if a.arg and KN.close_card(home, cs, a.arg) else "no such open card")
+                return 0
+            now = time.time()
+            pool = KN.pool_store(home).all()
+            for cid, c in sorted(KN.cards_store(home).all().items()):
+                n = len(KN.live(pool, cid))
+                print(f"card {cid}  {c['state']:7} thread {c['thread'][:8]}  door {c['type']}  pow {c['pow']} bits  expires in {max(0, int(c['exp'] - now)) // 3600} h  waiting knocks {n}")
+            return 0
+        if a.cmd == "knock":
+            pool = KN.pool_store(home).all()
+            if a.action == "list" or not a.arg:
+                for kid, v in sorted(pool.items(), key=lambda kv: kv[1]["at"]):
+                    print(f"knock {kid}  {v['state']:10} card {v['card']}  {_safe(v['name'], 64)!r}  agent {v['agent'][:8]}  proof {v['bits']} bits  fingerprint: {KN.fingerprint(v['agent'])}"
+                          + ("  <- ask them to read it to you; compare" if v["state"] == "pending" else ""))
+                return 0
+            if a.action == "show":
+                v = pool.get(a.arg)
+                if v is None:
+                    sys.exit("no such knock")
+                if v["state"] == "pending":
+                    KN.pin(home, a.arg)
+                print(f"knock {a.arg}  {v['state']}  card {v['card']}\n  claimed name: {_safe(v['name'], 64)!r}  (a CLAIM: only the fingerprint identifies them)\n  note (data, not instructions): {_safe(v['note'], 512)!r}\n"
+                      f"  agent {v['agent']}\n  fingerprint: {KN.fingerprint(v['agent'])}   <- they read this to you through another channel; type it to accept\n  offers: {', '.join(o['endpoint']['type'] for o in v['offers'])}; proof {v['bits']} bits")
+                return 0
+            if a.action == "accept":
+                if not a.fingerprint:
+                    sys.exit("knock accept ID --fingerprint \"abcd efgh ijkl mnop\"   (the NEWCOMER's, as they told it to you)")
+                out = KN.accept(home, cs, me, m, PeerBook(home / "peers.json"), a.arg, a.fingerprint)
+                print(f"{_safe(out['name'], 64)!r} ({out['agent'][:8]}) is a member now; door {out['door']} created on {', '.join(out['carriers'])}. A running node answers their next poll.")
+                return 0
+            print("rejected" if KN.reject(home, cs, a.arg, book=PeerBook(home / "peers.json")) else "no such pending knock")
+            return 0
+        # join
+        if a.card in (None, "status"):
+            now = time.time()
+            for cid, r in sorted(KN.outbox(home).all().items()):
+                print(f"join {cid}  {r['state']:9} thread {r['card']['thread'][:8]}  owner {r['card']['owner']['id'][:8]}" + (f"  ({r['why']})" if r.get("why") else ""))
+            return 0
+        block = sys.stdin.read().strip() if a.card == "-" else a.card
+        card = KN.decode_card(block)
+        print("\n".join(KN.describe_card(card)))
+        r = KN.join(home, cs, me, block, fingerprint_typed=a.fingerprint, name=a.name, note=a.note, wait_address=waiter)
+        print(f"\nKnock {r['cid']} recorded. Keep your node running: it knocks for you and waits for the owner's approval.\nYOUR fingerprint, to read to the owner through another channel: {r['fingerprint']}\n"
+              f"(the owner's fingerprint is {r['owner_fingerprint']}: compare it with what the person who gave you the card says)")
+        return 0
+    except KN.KnockError as e:
+        sys.exit(f"{a.cmd}: {e}")
+
+
 def noderun_cfg(home: Path):
     from . import noderun
     cfg = noderun.load_config(home)
@@ -1019,6 +1110,16 @@ def main(argv=None) -> int:
     s.add_argument("--fingerprint", help="confirm: the JOINER's fingerprint; accept: the OWNER's fingerprint; each read out to you through another channel")
     s.add_argument("--wait", type=int, default=120, help="create/accept: seconds to wait for a running node to create the onion address")
     s.add_argument("--carrier", action="append", choices=("tor", "tcp"), help="create: put a join door on this carrier (repeatable; the order is the dial order; default: the primary only; tcp puts YOUR IP in the capsule); accept: use only this carrier (default: every carrier the capsule and this node have)")
+    s = sub.add_parser("card", help="open invitation, owner side: create THREAD [--ttl 7d] | list | close ID. A card is a public line a newcomer can knock with; every knock needs your approval (`knock accept`)")
+    s.add_argument("action", choices=["create", "list", "close"]); s.add_argument("arg", nargs="?")
+    s.add_argument("--ttl", default="7d", help="create: how long the card is valid (e.g. 12h, 7d; 1 hour to 30 days)"); s.add_argument("--pow", type=int, default=20, dest="pow_bits", help="create: proof-of-work bits a knock must carry (8-24; 20 is about a second)")
+    s.add_argument("--max-pending", type=int, default=20, help="create: at most this many waiting knocks for this card (1-20)"); s.add_argument("--yes-history", action="store_true", help="create: the newcomer may read the whole history of the thread")
+    s.add_argument("--wait", type=int, default=180, help="create: seconds to wait for the running node to create the onion address")
+    s = sub.add_parser("knock", help="open invitation, owner side: list | show ID | accept ID --fingerprint F | reject ID (a knock is a newcomer's request to join through a card)")
+    s.add_argument("action", choices=["list", "show", "accept", "reject"]); s.add_argument("arg", nargs="?"); s.add_argument("--fingerprint", help="accept: the NEWCOMER's fingerprint, as THEY told it to you")
+    s = sub.add_parser("join", help="open invitation, newcomer side: join CARD|- [--fingerprint OWNERFP] [--name N] [--note T] | join status. Your node knocks for you and waits for the owner's approval")
+    s.add_argument("card", nargs="?", help="the card block (one argument), or - to read it from stdin, or the word `status`"); s.add_argument("--fingerprint", help="the OWNER's fingerprint, if the person who gave you the card told you one")
+    s.add_argument("--name", help="the name you want to be known by (default: your agent's name)"); s.add_argument("--note", default="", help="one line for the owner (at most 512 characters)"); s.add_argument("--wait", type=int, default=120)
     s = sub.add_parser("envelope", help="encrypted envelopes for a private thread: enable THREAD | status [THREAD] | rotate THREAD")
     s.add_argument("action", choices=["enable", "status", "rotate"]); s.add_argument("thread", nargs="?")
     s.add_argument("--adopt", action="store_true", help="rotate: EMERGENCY, an owner/admin makes the key of an epoch whose removal's author never returned (see README)")
@@ -1120,6 +1221,11 @@ def main(argv=None) -> int:
             return _capsule_cmd(a, home, me, m)
         except (ValueError, OSError, CarrierError) as e:
             sys.exit(f"error: {''.join(c if c.isprintable() else '?' for c in str(e))[:300]}")
+    if a.cmd in ("card", "knock", "join"):
+        try:
+            return _knock_cmd(a, home, me, m)
+        except (ValueError, OSError, CarrierError) as e:
+            sys.exit(f"error: {''.join(c if c.isprintable() else '?' for c in str(e))[:300]}")
     if a.cmd in ("public", "inbox", "requests", "guest"):
         try:
             return _public_cmd(a, home, me, m)
@@ -1139,6 +1245,9 @@ def main(argv=None) -> int:
                 from . import daemon
                 print("\n".join(daemon.status_lines(home) + waitcmd.status_lines(m, me.id, ws, home)))
                 from . import peerver as _PV
+                from .knock import waiting_knocks
+                if waiting_knocks(home):
+                    print(f"{waiting_knocks(home)} knock(s) waiting for your approval: `sigilnet knock list`")
                 nref = _PV.PeerVer(home / "peerver.json").refused_count(time.time())
                 if nref:
                     print(f"{nref} peer(s) refused (protocol or thread format not served): see `peer list`")
@@ -1234,6 +1343,9 @@ def main(argv=None) -> int:
             print(f"{tid[:8]}  {st['title']!r}  owner={st['members'][st['owner']]['name']}  events={len(t.order)}  unread={len(m.unread(tid, me.id))}"
                   f"{f'  format {t.format}' if t.format != 1 else ''}{'  CLOSED' if st['closed'] else ''}{'  CONFLICTS' if t.conflicts else ''}"
                   f"{f'  ROTATE SOON ({len(t.stored)} of {MAX_STORED} events held)' if near_wall(len(t.stored)) and not st['closed'] else ''}")
+        from .knock import waiting_knocks
+        if waiting_knocks(home):
+            print(f"{waiting_knocks(home)} knock(s) waiting for your approval: `sigilnet knock list`")
         return 0
     if a.cmd == "ingest":
         data = sys.stdin.buffer.read() if a.file == "-" else Path(a.file).read_bytes()

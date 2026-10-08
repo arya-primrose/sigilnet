@@ -7,7 +7,7 @@ A declaration is a self-declared hint (signed only as a claim of the node's own 
 the asker declared itself, of their answers: a 0.1.x node ignores the extra field, so the 0.1.x wire bytes are unchanged."""
 import re
 
-SW = "0.4.2"
+SW = "0.5.0"
 WIRE = (1, 0)
 MAJORS = (1, 0)
 FORMATS = (2, 1)

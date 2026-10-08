@@ -45,3 +45,20 @@ Unit tests (card format, PoW and its context, pool bounds, every refusal, whole-
 2. Where may a card be published? Not in a public place: the human hands the card over with the URL (a public card = anyone can flood the door).
 3. Public onion knock door on a live node, only while a card is open: yes in principle, his go for each opening, only after the rehearsal shows the peer doors survive a flood.
 4. History: rotate first (a clean slate before a card is opened); `card create` says so itself.
+
+## 11. As built (2026-10-07; branch knock, tags knock_s1..knock_s3b, knock_rehearsal) and where it differs from rev 1
+Built as sections 2-9 describe, stage 1 only (`approve`). Differences and additions:
+- **The card carries the owner's SIGN key** besides the id (the id is a hash; the joiner needs the key to verify the owner-signed answer). Card fields: v, card (8 hex), owner {id, sign}, thread, door (endpoint), dial (public credential), pow, exp. About 570 characters.
+- **Proof of work**: knock-pow context in pow.py (domain separation; defaults unchanged), card base cost 8-24 bits (default 20 = about 1-2 s in python), up to 4 adaptive bits as the pool fills, so 28 at most (minutes). Rev 1's 26-34 bits were too slow for a python solver. The joiner solves in slices with a short sleep (`polite_solve`) so a node serving doors is not starved.
+- **The challenge's bits reveal the pool's fill level** (0-4 extra bits) to anyone holding the card; that is accepted (it is also what tells a legitimate joiner what to pay).
+- **No burning.** Junk requests are counted in memory only; a card is never closed because of what strangers send (the card id is public: burning would be a cheap close button) and junk costs no disk write. `card close` is the owner's tool.
+- **Ended cards**: `status` keeps answering for GRACE = 2 h so a confirmed newcomer can collect its answer and a pending one learns `rejected`; sweep keeps the door only while a confirmed knock still has an answer to collect (the `collected` mark) and at most GRACE; pending knocks of an ended card are rejected by `close_card` and again by the sweep.
+- **Finished knocks lose their note and offers** (`knock.finish`); a finished record that still has them is invalid on load. 1000 finished = about 380 KB, one valid knock about 25 ms.
+- **A failed join may be retried with the same card**; finished joins are forgotten after a day.
+- **Eviction** is per card when the card's own cap triggered; a knock no stronger than the weakest unpinned one is told `full` with the bits to beat.
+- **`Store.edit` writes only when the records changed** (shared with the capsule store); `knock.sweep` and the node's poll check touch no file on a node that never made a card or joined by one.
+- **Owner reminders**: `watch` REMINDER, `list` and `status` count waiting knocks (a knock is not an unread event).
+- **No `--allow-ip`**: a knock door is public, so it needs a carrier that hides the address; only the primary Tor carrier serves it.
+- capsule.py gained two behaviour-preserving module functions (offers_problem, sealed_keys) used by both flows; accept repeats confirm's steps and order (compared line by line by Sansa) instead of refactoring confirm.
+- Wake: inbox line {"knock": true}, KNOCK_GAP 60 s per thread, ids only; an older watcher prints its normal line.
+Tests: test_knock (54), test_cli_knock, test_knock_wake, test_knock_sansa (22, her adversarial suite), test_m2 tick, mutation run (36 mutants: all killed but two equivalent; it found one real bug: accept on an expired, not yet swept card). Real Tor rehearsal: live_results/knock_rehearsal/RESULT.txt (stranger newcomer PASS; flood of the knock door with the peer door unaffected; card close works). NOT done: a flood by many tor clients; stage 2 (`code`); opening a card on a live node (the human's go each time).

@@ -732,6 +732,7 @@ class PerPeerServices(unittest.TestCase):
             self.assertTrue(n.reconfigure())                                                              # new torrc + SIGHUP to the running tor
             end = time.time() + 40
             while time.time() < end and not n.service_address("c"):
+                n.reconfigure()                                                                           # (as the node's loop does every tick: a tor that has not installed its SIGHUP handler yet is not signalled, the reload is due again)
                 time.sleep(0.3)
             self.assertTrue(n.service_address("c"))
             self.assertTrue(n.running())

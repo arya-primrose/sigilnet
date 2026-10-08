@@ -20,6 +20,7 @@ from .carrier import Carrier, CarrierError, endpoints_of
 from .doors import SHARED, Doors, door_handler, service_handler      # (re-exported: the doors live in doors.py, which has no Tor in it)
 from .keys import Identity
 from . import capsule
+from . import knock
 from .envelope import EnvCodec
 from .inbox import Inbox
 from .mirror import Mirror
@@ -278,7 +279,12 @@ class _JoinWorker:
                 capsule.sweep(self.home, list(self.carriers.values()), skip=[t for t in self.carriers if not self._up(t)])
             except Exception as e:                                 # noqa: BLE001 - a damaged capsule file must not stop the node
                 self.out(f"  capsule sweep: {type(e).__name__}")
-        if now - self.last_poll >= self.POLL_EVERY and not self.busy.is_set() and any(r.get("state") in ("door", "requested") for r in capsule.Joins(self.home).all().values()):
+            try:
+                knock.sweep(self.home, [c for t, c in self.carriers.items() if self._up(t)])
+            except Exception as e:                                 # noqa: BLE001 - nor a damaged card file
+                self.out(f"  card sweep: {type(e).__name__}")
+        if now - self.last_poll >= self.POLL_EVERY and not self.busy.is_set() and (any(r.get("state") in ("door", "requested") for r in capsule.Joins(self.home).all().values())
+                                                                                   or knock.waiting_joins(self.home)):
             self.last_poll = now
             self.busy.set()
             threading.Thread(target=self._poll, daemon=True).start()
@@ -294,6 +300,11 @@ class _JoinWorker:
                 self.out(f"  join {cid}: {st}")
         except Exception as e:                                     # noqa: BLE001 - never kill the node for a join that cannot progress
             self.out(f"  join poll: {type(e).__name__}")
+        try:
+            for cid, st in knock.poll(self.home, self.carriers, self.me, self.book, self._transport, codec=self.codec).items():
+                self.out(f"  card join {cid}: {st}")
+        except Exception as e:                                     # noqa: BLE001
+            self.out(f"  card join poll: {type(e).__name__}")
         finally:
             self.busy.clear()
 
@@ -379,7 +390,8 @@ def run(home: Path, me: Identity, *, seconds: float = 0, offline: bool = False, 
     node.heard_from = syncsrv.heard.get                              # (M4a: an acknowledged notify the peer does not answer with a pull of its own makes us pull it, and a pull pushes)
     syncsrv.set_peers(peers.all())                                  # (who counts as a KNOWN sender for the server's budgets: refreshed every few seconds in the loop below)
     join_handler = capsule.JoinServer(home, list(carriers.values()), me, m).handle                # (M2: one JoinServer behind the join door of EVERY carrier)
-    handlers = {"read": PublicRead(syncsrv, blobs=PublicBlob(syncsrv, bsvc)).handle, "inbox": Inbox(m, home).handle, "join": join_handler}
+    knock_handler = knock.KnockServer(home, list(carriers.values()), me, m, notify=lambda kid, tid: m.note_knock(tid)).handle      # (the open invitation: a public door, the primary carrier only)
+    handlers = {"read": PublicRead(syncsrv, blobs=PublicBlob(syncsrv, bsvc)).handle, "inbox": Inbox(m, home).handle, "join": join_handler, "knock": knock_handler}
     doors_by = {t: Doors(c, syncsrv, out, handlers if c is tor else {"join": join_handler}, allow_public_without_ip_hiding=allow_public_without_ip_hiding) for t, c in carriers.items()}     # public doors: the primary carrier only
     pings = PingService(node, home, dialer)                         # (the dialer takes `left`: the CLI gives up at its deadline, so the dial must too)
     waker = Waker(home / "node.poke")
@@ -393,6 +405,7 @@ def run(home: Path, me: Identity, *, seconds: float = 0, offline: bool = False, 
         old_term = signal.signal(signal.SIGTERM, _term)
     try:
         capsule.sweep(home, list(carriers.values()))               # expired / rejected / abandoned join doors are deleted BEFORE tor starts, on every carrier (a kill -9 must not leave one)
+        knock.sweep(home, list(carriers.values()))                 # ... and the knock doors of ended cards
         doors_up = lambda: sum(len(d.servers) for d in doors_by.values())           # noqa: E731
         doors_total = lambda: sum(len(c.doors()) for c in carriers.values())        # noqa: E731
         if multi:
