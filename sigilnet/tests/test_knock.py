@@ -744,3 +744,27 @@ class Sealing(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReadOnlyTouchesNothing(unittest.TestCase):
+    """Reading cards, knocks or joins on a home that never used them creates no file at all (Sansa's nit: empty *.lock files)."""
+
+    def test_read_only_commands_leave_an_unused_home_untouched(self):
+        from sigilnet.tests.test_cli_public import run
+        h = tempfile.mkdtemp()
+        run(h, "id", "init", "carol")
+        before = sorted(p.name for p in Path(h).rglob("*") if p.is_file())
+        for args in (("card", "list"), ("knock", "list"), ("join", "status"), ("capsule", "list"), ("list",), ("status",)):
+            rc, out, err = run(h, *args)
+            self.assertEqual(rc, 0, (args, err))
+        after = sorted(p.name for p in Path(h).rglob("*") if p.is_file())
+        new = [n for n in after if n not in before]
+        self.assertEqual([n for n in new if n.startswith(("cards", "knocks", "outknocks", "capsules", "joins"))], [], new)         # (the mirror's own lock files are another matter)
+
+    def test_the_store_functions_read_nothing_without_a_file(self):
+        h = tempfile.mkdtemp()
+        self.assertEqual((K.cards_store(h).all(), K.pool_store(h).all(), K.outbox(h).all()), ({}, {}, {}))
+        self.assertEqual((K.waiting_knocks(h), K.waiting_joins(h), K.pending(h)), (0, False, {}))
+        self.assertEqual(list(Path(h).iterdir()), [])
+        K.cards_store(h).edit(lambda d: None)                       # an edit that changes nothing writes nothing either (but may take its lock)
+        self.assertFalse((Path(h) / "cards.json").exists())

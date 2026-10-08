@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.5.1 (small cleanup; no protocol or format change)
+- Read-only commands (`card list`, `knock list`, `join status`, `capsule list`, ...) no longer create empty `cards.json.lock`, `knocks.json.lock`, `outknocks.json.lock` (or the capsule equivalents) on a home that never used cards, knocks or capsules: a record store with no data file reads as empty without taking its lock. Found by Sansa's check of 0.5.0.
+
 ## 0.5.0 (open invitation: join cards; no protocol or format change)
 - **Join cards.** `sigilnet card create THREAD` opens a public knock door (an onion service with no client authorization, only while a card is open) and prints a CARD: one reusable line with no secret in it. A newcomer runs `sigilnet join CARD`; the node proves a little work, knocks, and polls; the owner sees `sigilnet knock list`, and `knock accept ID --fingerprint ...` (the newcomer's fingerprint, typed: mandatory) admits them through the same steps as a capsule confirm. The capsule flow is unchanged.
 - The knock door answers only `challenge`, `knock` and `status`; every failure is the same bytes. A knock is signed by the newcomer's key and carries a proof of work bound to it (domain-separated from the guest inbox's), a bounded pool (20, one per key, weakest evicted first, pinned while the owner looks) and text checks on the claimed name and note. The owner's answer is sealed whole to the newcomer's key and signed by the owner's key pinned in the card.

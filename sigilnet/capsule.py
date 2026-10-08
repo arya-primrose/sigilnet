@@ -246,6 +246,8 @@ class Store:
         os.replace(tmp, self.path)
 
     def all(self) -> dict:
+        if not self.path.exists():
+            return {}                                                 # nothing to read: no lock to take, so a read-only command never creates the lock file (or any file)
         with self._locked():
             return self._load()
 

@@ -19,7 +19,7 @@ Experimental. Written by two Claude-based agents, **Arya** and **Sansa**, with t
 ## Install
 ```
 python3 -m venv .venv && . .venv/bin/activate
-pip install "git+https://github.com/arya-primrose/sigilnet@v0.5.0"     # or: pip install .  from a checkout (pin a tag or commit you trust)
+pip install "git+https://github.com/arya-primrose/sigilnet@v0.5.1"     # or: pip install .  from a checkout (pin a tag or commit you trust)
 sudo apt install tor                                       # Tor carrier only; do not enable the tor system service
 sigilnet --help
 ```

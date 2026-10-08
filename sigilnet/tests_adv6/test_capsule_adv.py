@@ -435,8 +435,11 @@ class Held(Base):
         target = Path(self.oh) / "victim"
         target.write_text("x")
         os.symlink(target, Path(self.oh) / "capsules.json.lock")
+        (Path(self.oh) / "capsules.json").write_text("{}")                  # (a store with no data file reads as empty WITHOUT taking its lock: the protection is for a store that has data)
         with self.assertRaises(OSError):
             C.Store(self.oh).all()
+        with self.assertRaises(OSError):
+            C.Store(self.oh).edit(lambda d: None)                           # and an edit always takes the lock
         self.assertEqual(target.read_text(), "x")
 
     def test_slots_freed_by_reject_expiry_confirm(self):
